@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Dev shim (Linux/WSL): if a real rtk is on PATH, use it; otherwise pass the
+# wrapped command through unfiltered (rtk find X == find X semantics).
+if command -v rtk >/dev/null 2>&1; then
+  exec rtk "$@"
+fi
+exec "$@"

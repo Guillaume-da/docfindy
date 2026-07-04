@@ -1,0 +1,52 @@
+{
+  "app": { "name": "Findy", "tagline": "Encuentra cualquier archivo. Solo pregunta." },
+  "chat": {
+    "placeholder": "Describe el archivo que buscas…",
+    "send": "Enviar",
+    "thinking": "Buscando…",
+    "empty": "Pídeme encontrar cualquier archivo en este equipo.",
+    "examples": "Prueba: \"busca la hoja de presupuesto\" · \"el PDF de impuestos\" · \"mi currículum\"",
+    "error": "Algo salió mal",
+    "noKey": "Añade tu clave API de Claude en Ajustes para empezar a buscar."
+  },
+  "preview": {
+    "title": "Vista previa",
+    "synthesis": "Síntesis",
+    "openBrowser": "Abrir en el navegador",
+    "copyPath": "Copiar ruta",
+    "copied": "¡Copiado!",
+    "empty": "Los archivos encontrados aparecen aquí.",
+    "noPreview": "Sin vista previa para este tipo de archivo.",
+    "size": "Tamaño",
+    "modified": "Modificado"
+  },
+  "settings": {
+    "title": "Ajustes",
+    "apiKey": "Clave API de Claude",
+    "apiKeyPlaceholder": "sk-ant-…",
+    "apiKeySaved": "Clave guardada",
+    "language": "Idioma",
+    "folders": "Carpetas indexadas",
+    "addFolder": "Añadir carpeta",
+    "reindex": "Reconstruir índice",
+    "updateIndex": "Actualizar índice",
+    "save": "Guardar",
+    "close": "Cerrar"
+  },
+  "onboarding": {
+    "welcome": "Bienvenido a Findy",
+    "intro": "Findy construye un grafo de conocimiento local de tus archivos y encuentra lo que describas en lenguaje natural.",
+    "step1": "1 · Pega tu clave API de Claude",
+    "step2": "2 · Elige carpetas para indexar",
+    "start": "Construir índice y empezar",
+    "indexing": "Construyendo grafo de conocimiento…",
+    "pickFolder": "Elegir carpeta",
+    "noFolders": "Añade al menos una carpeta."
+  },
+  "index": {
+    "files": "{{count}} archivos indexados",
+    "stage_detect": "Escaneando {{root}}",
+    "stage_ast": "Extrayendo estructura del código",
+    "stage_graph": "Construyendo grafo"
+  }
+}

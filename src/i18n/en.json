@@ -1,0 +1,52 @@
+{
+  "app": { "name": "Findy", "tagline": "Find any file. Just ask." },
+  "chat": {
+    "placeholder": "Describe the file you're looking for…",
+    "send": "Send",
+    "thinking": "Searching…",
+    "empty": "Ask me to find any file on this computer.",
+    "examples": "Try: \"find the budget spreadsheet\" · \"the PDF about taxes\" · \"my resume\"",
+    "error": "Something went wrong",
+    "noKey": "Add your Claude API key in Settings to start searching."
+  },
+  "preview": {
+    "title": "Preview",
+    "synthesis": "Synthesis",
+    "openBrowser": "Open in browser",
+    "copyPath": "Copy path",
+    "copied": "Copied!",
+    "empty": "Found files appear here.",
+    "noPreview": "No inline preview for this file type.",
+    "size": "Size",
+    "modified": "Modified"
+  },
+  "settings": {
+    "title": "Settings",
+    "apiKey": "Claude API key",
+    "apiKeyPlaceholder": "sk-ant-…",
+    "apiKeySaved": "Key saved",
+    "language": "Language",
+    "folders": "Indexed folders",
+    "addFolder": "Add folder",
+    "reindex": "Rebuild index",
+    "updateIndex": "Update index",
+    "save": "Save",
+    "close": "Close"
+  },
+  "onboarding": {
+    "welcome": "Welcome to Findy",
+    "intro": "Findy builds a local knowledge graph of your files, then finds anything you describe in plain language.",
+    "step1": "1 · Paste your Claude API key",
+    "step2": "2 · Choose folders to index",
+    "start": "Build index & start",
+    "indexing": "Building knowledge graph…",
+    "pickFolder": "Choose a folder",
+    "noFolders": "Add at least one folder."
+  },
+  "index": {
+    "files": "{{count}} files indexed",
+    "stage_detect": "Scanning {{root}}",
+    "stage_ast": "Extracting code structure",
+    "stage_graph": "Building graph"
+  }
+}
