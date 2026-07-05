@@ -1,4 +1,4 @@
-//! findy-engine sidecar (graphify wrapper). Resolution order:
+//! findy-engine sidecar (document indexer). Resolution order:
 //! 1. FINDY_ENGINE env var — dev override, e.g.
 //!    `FINDY_ENGINE="/home/g/projects/findy/engine/.venv/bin/python /home/g/projects/findy/engine/main.py"`
 //! 2. sidecar binary next to the app executable (production bundle)

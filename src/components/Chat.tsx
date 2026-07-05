@@ -61,8 +61,9 @@ export default function Chat({
   }
 
   const activityLabel: Record<string, string> = {
-    graph_vocab: "graph vocab",
-    graph_query: "graph query",
+    doc_search: "search",
+    content_search: "content search",
+    read_file: "reading",
     fs_probe: "disk scan",
     show_file: "preview",
   };

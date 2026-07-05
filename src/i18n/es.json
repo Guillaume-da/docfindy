@@ -46,7 +46,6 @@
   "index": {
     "files": "{{count}} archivos indexados",
     "stage_detect": "Escaneando {{root}}",
-    "stage_ast": "Extrayendo estructura del código",
-    "stage_graph": "Construyendo grafo"
+    "stage_fts": "Indexando contenido de documentos"
   }
 }

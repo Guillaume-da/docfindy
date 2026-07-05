@@ -3,7 +3,7 @@
 //! Token budget kept low by design:
 //! - caveman-style system prompt (terse output, ~65% fewer output tokens)
 //! - rtk-compressed filesystem probes fed back as tool results
-//! - graph vocab capped, query results capped
+//! - doc_search results capped
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -13,7 +13,6 @@ use crate::{engine, rtk};
 
 const API_URL: &str = "https://api.anthropic.com/v1/messages";
 const MAX_TURNS: usize = 10;
-const VOCAB_CAP: usize = 3000;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ShownFile {
@@ -45,12 +44,11 @@ Workflow for every search:
    (pdf/docx/odt/text), accent-insensitive, prefix-matched, ranked. Pass the
    user's own words plus obvious synonyms and translations (e.g. user says
    "facture" -> "facture invoice"). Inspect ranked hits: path, name, snippet.
-2. For code entities (functions, classes, modules): graph_vocab then
-   graph_query with tokens from that vocabulary.
-3. If neither yields anything useful: fs_probe with a filename fragment.
-4. If doc_search returns the note "no content index", tell the user to
+2. If nothing useful: retry doc_search with different words, then fs_probe
+   with a filename fragment.
+3. If doc_search returns the note "no content index", tell the user to
    rebuild the index from Settings.
-5. When you identify the right file: call read_file on it, write a 2-4 line
+4. When you identify the right file: call read_file on it, write a 2-4 line
    synthesis of what the document contains, then call show_file with the
    absolute path AND that synthesis in the summary field. Give the user the
    full path in your reply.
@@ -90,26 +88,8 @@ fn tools() -> Value {
             }
         },
         {
-            "name": "graph_vocab",
-            "description": "Vocabulary (tokens) of all node labels in the local knowledge graph. Call once per search, then pick query tokens only from this list.",
-            "input_schema": {"type": "object", "properties": {}}
-        },
-        {
-            "name": "graph_query",
-            "description": "Search the knowledge graph. tokens: space-separated tokens taken from graph_vocab. Returns ranked matching nodes with absolute file paths and 1-hop neighbor context.",
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "tokens": {"type": "string", "description": "space-separated vocab tokens"},
-                    "dfs": {"type": "boolean", "description": "true to trace chains deeper"},
-                    "limit": {"type": "integer", "default": 8}
-                },
-                "required": ["tokens"]
-            }
-        },
-        {
             "name": "fs_probe",
-            "description": "Fallback filename scan on disk (rtk-compressed output). Use only when graph_query found nothing relevant.",
+            "description": "Fallback filename scan on disk (rtk-compressed output). Use only when doc_search found nothing relevant.",
             "input_schema": {
                 "type": "object",
                 "properties": {
@@ -178,41 +158,6 @@ async fn execute_tool(
                 "--query".into(), input["query"].as_str().unwrap_or_default().to_string(),
                 "--limit".into(), input["limit"].as_u64().unwrap_or(10).to_string(),
             ];
-            match engine::run(app, &args, false).await {
-                Ok(v) => serde_json::to_string(&v).unwrap_or_default(),
-                Err(e) => format!("error: {e}"),
-            }
-        }
-        "graph_vocab" => {
-            let args = vec!["vocab".into(), "--out".into(), out_dir];
-            match engine::run(app, &args, false).await {
-                Ok(v) => {
-                    let vocab: Vec<String> = v["vocab"]
-                        .as_array()
-                        .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
-                        .unwrap_or_default();
-                    let total = vocab.len();
-                    let capped: Vec<&String> = vocab.iter().take(VOCAB_CAP).collect();
-                    format!(
-                        "{} tokens{}: {}",
-                        total,
-                        if total > VOCAB_CAP { " (capped)" } else { "" },
-                        capped.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(" ")
-                    )
-                }
-                Err(e) => format!("error: {e}"),
-            }
-        }
-        "graph_query" => {
-            let tokens = input["tokens"].as_str().unwrap_or_default().to_string();
-            let mut args = vec![
-                "query".into(), "--out".into(), out_dir,
-                "--tokens".into(), tokens,
-                "--limit".into(), input["limit"].as_u64().unwrap_or(8).to_string(),
-            ];
-            if input["dfs"].as_bool().unwrap_or(false) {
-                args.push("--dfs".into());
-            }
             match engine::run(app, &args, false).await {
                 Ok(v) => serde_json::to_string(&v).unwrap_or_default(),
                 Err(e) => format!("error: {e}"),

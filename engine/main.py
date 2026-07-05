@@ -1,22 +1,29 @@
 #!/usr/bin/env python3
-"""Findy engine — graphify wrapper sidecar.
+"""Findy engine — document indexing sidecar.
 
 JSON-over-stdout CLI consumed by the Tauri (Rust) core. Every subcommand
 prints exactly one JSON document on stdout; errors go to stderr with a
 non-zero exit code.
 
+The index is a single SQLite FTS5 database (content.db): file names AND
+extracted text content (pdf/docx/odt/plain text), accent-insensitive,
+BM25-ranked. files.json keeps the flat file inventory for content_search
+and the UI.
+
 Subcommands:
   detect  --path P [--path P2 ...]                 corpus summary per root
   build   --out DIR --path P [--path P2 ...]       full index build
-  update  --out DIR                                incremental rebuild (cached AST)
-  vocab   --out DIR                                token vocabulary of node labels
-  query   --out DIR --tokens "a b c" [--dfs] [--limit N]
+  update  --out DIR                                incremental rebuild
+  text    --path F [--max-chars N]                 extract text of one file
+  search  --out DIR --needle S [--path F]          literal content search
+  fts     --out DIR --query Q [--limit N]          ranked name+content search
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 import time
@@ -44,27 +51,88 @@ def _progress(stage: str, **extra) -> None:
           file=sys.stderr, flush=True)
 
 
-def _norm_id(path_like: str) -> str:
-    return re.sub(r"[^a-z0-9_]", "_", path_like.lower())
-
-
-CATEGORIES = ("code", "document", "paper", "image", "video")
+# ---------------------------------------------------------------------------
+# file walker — what gets indexed at all
+# ---------------------------------------------------------------------------
 
 # Windows system dirs — never useful in a personal file index, and huge.
-# Dev noise (node_modules, .git, venvs, caches, dist/build/target) is already
-# skipped by graphify's built-in _SKIP_DIRS during the walk. gitignore-style
-# patterns, matched at any depth, so they apply both to a C:\ root and to
+# Matched by name at any depth, so they apply both to a C:\ root and to
 # AppData nested under a C:\Users\<name> root.
-SYSTEM_EXCLUDES = [
-    "Windows/", "Program Files/", "Program Files (x86)/", "ProgramData/",
-    "AppData/", "$RECYCLE.BIN/", "System Volume Information/",
-    "Recovery/", "PerfLogs/", "OneDriveTemp/",
-]
+SYSTEM_DIRS = {
+    "windows", "program files", "program files (x86)", "programdata",
+    "appdata", "$recycle.bin", "system volume information",
+    "recovery", "perflogs", "onedrivetemp",
+}
+
+# Dev noise; hidden dirs (leading dot: .git, .venv, .cache, ...) are skipped
+# by rule, these are the non-dotted stragglers.
+NOISE_DIRS = {"node_modules", "__pycache__", "site-packages", "venv"}
+
+SKIP_FILES = {"desktop.ini", "thumbs.db", ".ds_store"}
+
+# Never index secrets, by name prefix or suffix; counted as skipped_sensitive.
+SENSITIVE_PREFIXES = (".env", "id_rsa", "id_ed25519", "id_ecdsa")
+SENSITIVE_SUFFIXES = {".pem", ".key", ".kdbx", ".pfx", ".p12", ".ppk"}
+
+DOCUMENT_SUFFIXES = {
+    ".pdf", ".docx", ".doc", ".odt", ".rtf", ".txt", ".md", ".markdown",
+    ".epub", ".xlsx", ".xls", ".ods", ".csv", ".pptx", ".ppt", ".odp",
+}
+IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp",
+                  ".ico", ".tif", ".tiff", ".heic"}
+VIDEO_SUFFIXES = {".mp4", ".mkv", ".avi", ".mov", ".wmv", ".webm"}
+AUDIO_SUFFIXES = {".mp3", ".wav", ".flac", ".m4a", ".ogg", ".opus"}
+CODE_SUFFIXES = {
+    ".py", ".js", ".ts", ".tsx", ".jsx", ".rs", ".go", ".java", ".c",
+    ".cpp", ".h", ".sh", ".html", ".htm", ".css", ".xml", ".sql", ".php",
+    ".rb", ".json", ".yaml", ".yml", ".toml", ".ini", ".log",
+}
+
+CATEGORY_BY_SUFFIX: dict[str, str] = {}
+for _sfx, _cat in [(DOCUMENT_SUFFIXES, "document"), (IMAGE_SUFFIXES, "image"),
+                   (VIDEO_SUFFIXES, "video"), (AUDIO_SUFFIXES, "audio"),
+                   (CODE_SUFFIXES, "code")]:
+    for _s in _sfx:
+        CATEGORY_BY_SUFFIX[_s] = _cat
+
+CATEGORIES = ("document", "image", "video", "audio", "code")
 
 
-def _detect_root(root: Path) -> dict:
-    from graphify.detect import detect
-    return detect(root, extra_excludes=SYSTEM_EXCLUDES)
+def _skip_dir(name: str) -> bool:
+    n = name.lower()
+    return (n.startswith(".") or n in SYSTEM_DIRS or n in NOISE_DIRS
+            or n.endswith("_venv") or n.endswith("_env"))
+
+
+def _is_sensitive(name: str) -> bool:
+    n = name.lower()
+    return (n.startswith(SENSITIVE_PREFIXES)
+            or Path(n).suffix in SENSITIVE_SUFFIXES)
+
+
+def _collect(root: Path) -> tuple[list[dict], int]:
+    """Inventory of indexable files under root: (files, sensitive_count)."""
+    files: list[dict] = []
+    sensitive = 0
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if not _skip_dir(d)]
+        for fn in filenames:
+            if fn.lower() in SKIP_FILES:
+                continue
+            if _is_sensitive(fn):
+                sensitive += 1
+                continue
+            cat = CATEGORY_BY_SUFFIX.get(Path(fn).suffix.lower())
+            if not cat:
+                continue
+            fp = Path(dirpath) / fn
+            try:
+                st = fp.stat()
+            except OSError:
+                continue
+            files.append({"path": str(fp), "name": fn, "category": cat,
+                          "size": st.st_size, "mtime": int(st.st_mtime)})
+    return files, sensitive
 
 
 # ---------------------------------------------------------------------------
@@ -77,14 +145,15 @@ def cmd_detect(args: argparse.Namespace) -> None:
         root = Path(p).expanduser().resolve()
         if not root.exists():
             _fail(f"path not found: {root}")
-        d = _detect_root(root)
-        counts = {c: len(d.get("files", {}).get(c, [])) for c in CATEGORIES}
+        files, sensitive = _collect(root)
+        counts: dict[str, int] = {}
+        for f in files:
+            counts[f["category"]] = counts.get(f["category"], 0) + 1
         out.append({
             "root": str(root),
-            "total_files": d.get("total_files", 0),
-            "total_words": d.get("total_words", 0),
-            "counts": {k: v for k, v in counts.items() if v},
-            "skipped_sensitive": len(d.get("skipped_sensitive", [])),
+            "total_files": len(files),
+            "counts": counts,
+            "skipped_sensitive": sensitive,
         })
     _emit({"roots": out})
 
@@ -93,144 +162,21 @@ def cmd_detect(args: argparse.Namespace) -> None:
 # build / update
 # ---------------------------------------------------------------------------
 
-def _file_nodes_for_root(root: Path, detect_json: dict) -> tuple[list, list, list]:
-    """Synthesize one node per file + directory `contains` edges.
-
-    graphify's AST pass only creates nodes for code entities; a file finder
-    needs every file (PDF, image, doc, ...) to be a first-class node so the
-    query matcher can hit on filenames.
-    """
-    type_map = {"code": "code", "document": "document", "paper": "paper",
-                "image": "image", "video": "document"}
-    nodes, edges, index = [], [], []
-    seen_dirs: set[str] = set()
-
-    for cat in CATEGORIES:
-        for f in detect_json.get("files", {}).get(cat, []):
-            fp = Path(f)
-            try:
-                rel = fp.relative_to(root)
-            except ValueError:
-                rel = Path(fp.name)
-            fid = "file_" + _norm_id(str(rel))
-            nodes.append({
-                "id": fid,
-                "label": fp.name,
-                "file_type": type_map[cat],
-                "source_file": str(fp),
-                "source_location": str(fp),
-                "source_url": None, "captured_at": None,
-                "author": None, "contributor": None,
-            })
-            try:
-                st = fp.stat()
-                size, mtime = st.st_size, int(st.st_mtime)
-            except OSError:
-                size, mtime = 0, 0
-            index.append({"path": str(fp), "name": fp.name,
-                          "category": cat, "size": size, "mtime": mtime})
-
-            # chain of directory nodes root -> ... -> file
-            parent_id = None
-            acc = Path()
-            for part in rel.parts[:-1]:
-                acc = acc / part
-                did = "dir_" + _norm_id(str(acc))
-                if did not in seen_dirs:
-                    seen_dirs.add(did)
-                    nodes.append({
-                        "id": did, "label": part, "file_type": "concept",
-                        "source_file": str(root / acc),
-                        "source_location": str(root / acc),
-                        "source_url": None, "captured_at": None,
-                        "author": None, "contributor": None,
-                    })
-                    if parent_id:
-                        edges.append(_edge(parent_id, did, str(root / acc)))
-                parent_id = did
-            if parent_id:
-                edges.append(_edge(parent_id, fid, str(fp)))
-    return nodes, edges, index
-
-
-def _edge(src: str, dst: str, source_file: str) -> dict:
-    return {"source": src, "target": dst, "relation": "references",
-            "confidence": "EXTRACTED", "confidence_score": 1.0,
-            "source_file": source_file, "source_location": None, "weight": 1.0}
-
-
-def _ast_extract(root: Path, detect_json: dict) -> dict:
-    from graphify.extract import collect_files, extract
-    code_files: list[Path] = []
-    for f in detect_json.get("files", {}).get("code", []):
-        p = Path(f)
-        code_files.extend(collect_files(p) if p.is_dir() else [p])
-    if not code_files:
-        return {"nodes": [], "edges": [], "input_tokens": 0, "output_tokens": 0}
-    return extract(code_files, cache_root=root)
-
-
-def _link_entities_to_files(ast_nodes: list, file_nodes_by_src: dict) -> list:
-    """`references` edge file-node -> AST entity node, keyed on source_file."""
-    edges = []
-    for n in ast_nodes:
-        src = n.get("source_file")
-        if not src:
-            continue
-        fid = file_nodes_by_src.get(str(Path(src)))
-        if fid:
-            edges.append(_edge(fid, n["id"], str(src)))
-    return edges
-
-
 def _build(out_dir: Path, roots: list[Path]) -> None:
-    from graphify.build import build_from_json
-    from graphify.cluster import cluster
-    from graphify.export import to_json
-
     out_dir.mkdir(parents=True, exist_ok=True)
-    all_nodes, all_edges, files_index = [], [], []
     t0 = time.time()
 
+    files_index: list[dict] = []
     for root in roots:
         _progress("detect", root=str(root))
-        d = _detect_root(root)
-        _progress("detected", root=str(root),
-                  files=d.get("total_files", 0), words=d.get("total_words", 0))
+        files, _sensitive = _collect(root)
+        files_index += files
+        _progress("detected", root=str(root), files=len(files))
 
-        fnodes, fedges, index = _file_nodes_for_root(root, d)
-        _progress("ast", root=str(root))
-        ast = _ast_extract(root, d)
-
-        by_src = {n["source_file"]: n["id"] for n in fnodes}
-        link_edges = _link_entities_to_files(ast.get("nodes", []), by_src)
-
-        all_nodes += fnodes + ast.get("nodes", [])
-        all_edges += fedges + ast.get("edges", []) + link_edges
-        files_index += index
-        _progress("root_done", root=str(root),
-                  nodes=len(fnodes) + len(ast.get("nodes", [])))
-
-    # dedupe nodes by id (same file reachable from two roots)
+    # dedupe by path (same file reachable from two roots)
     seen: set[str] = set()
-    nodes = [n for n in all_nodes if not (n["id"] in seen or seen.add(n["id"]))]
-
-    extraction = {"nodes": nodes, "edges": all_edges, "hyperedges": [],
-                  "input_tokens": 0, "output_tokens": 0}
-    (out_dir / ".findy_extract.json").write_text(
-        json.dumps(extraction, ensure_ascii=False), encoding="utf-8")
-
-    _progress("graph")
-    # root=None: file nodes carry absolute paths on purpose — the app opens
-    # them directly. Multi-root corpora have no single relativization base.
-    G = build_from_json(extraction, directed=False)
-    if G.number_of_nodes() == 0:
-        _fail("graph is empty: no supported files found")
-    communities = cluster(G)
-
-    graph_path = out_dir / "graph.json"
-    graph_path.unlink(missing_ok=True)  # bypass #479 shrink guard: full rebuild is authoritative
-    to_json(G, communities, str(graph_path))
+    files_index = [f for f in files_index
+                   if not (f["path"] in seen or seen.add(f["path"]))]
 
     (out_dir / "files.json").write_text(json.dumps({
         "roots": [str(r) for r in roots],
@@ -238,13 +184,14 @@ def _build(out_dir: Path, roots: list[Path]) -> None:
         "files": files_index,
     }, ensure_ascii=False), encoding="utf-8")
 
-    _progress("fts")
+    _progress("fts", files=len(files_index))
     fts_docs = _build_fts(out_dir, files_index)
 
-    _emit({"ok": True, "nodes": G.number_of_nodes(),
-           "edges": G.number_of_edges(),
-           "communities": len(communities),
-           "files": len(files_index), "fts_docs": fts_docs,
+    # stale artifacts from the graphify era
+    (out_dir / "graph.json").unlink(missing_ok=True)
+    (out_dir / ".findy_extract.json").unlink(missing_ok=True)
+
+    _emit({"ok": True, "files": len(files_index), "fts_docs": fts_docs,
            "seconds": round(time.time() - t0, 1)})
 
 
@@ -263,142 +210,12 @@ def cmd_update(args: argparse.Namespace) -> None:
         _fail("no existing index: run build first")
     meta = json.loads(files_json.read_text(encoding="utf-8"))
     roots = [Path(r) for r in meta["roots"]]
-    # AST extraction is cached per file by graphify (cache_root), so a
-    # rebuild only re-parses changed code files; file nodes are cheap.
+    # cheap: the walk is fast, and _build_fts only re-extracts changed files
     _build(out_dir, roots)
 
 
 # ---------------------------------------------------------------------------
-# vocab
-# ---------------------------------------------------------------------------
-
-def _load_graph(out_dir: Path) -> dict:
-    gp = out_dir / "graph.json"
-    if not gp.exists():
-        _fail("no graph found: run build first")
-    return json.loads(gp.read_text(encoding="utf-8"))
-
-
-def _tokens_of(label: str) -> list[str]:
-    toks = []
-    for c in re.findall(r"[^\W_]+", label or "", re.UNICODE):
-        parts = re.findall(r"[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+|\d+", c) or [c]
-        toks += [p.lower() for p in parts if 2 <= len(p) <= 30]
-    return toks
-
-
-def cmd_vocab(args: argparse.Namespace) -> None:
-    data = _load_graph(Path(args.out))
-    vocab: set[str] = set()
-    for n in data["nodes"]:
-        vocab.update(_tokens_of(n.get("label", "")))
-    _emit({"vocab": sorted(vocab)})
-
-
-# ---------------------------------------------------------------------------
-# query
-# ---------------------------------------------------------------------------
-
-def _resolve_path(node: dict, roots: list[Path]) -> tuple[str | None, int | None]:
-    """Absolute path + optional line for a graph node.
-
-    File/dir nodes carry absolute paths in source_location; AST entity nodes
-    carry a root-relative source_file and 'L<num>' in source_location.
-    """
-    loc = node.get("source_location") or ""
-    src = node.get("source_file") or ""
-    line = None
-    m = re.fullmatch(r"L(\d+)", loc)
-    if m:
-        line = int(m.group(1))
-    elif loc and Path(loc).is_absolute():
-        return loc, None
-    if src:
-        p = Path(src)
-        if p.is_absolute():
-            return str(p), line
-        for r in roots:
-            cand = r / p
-            if cand.exists():
-                return str(cand), line
-        if roots:
-            return str(roots[0] / p), line
-    return (loc or None), line
-
-
-def cmd_query(args: argparse.Namespace) -> None:
-    out_dir = Path(args.out)
-    data = _load_graph(out_dir)
-    files_meta, roots = {}, []
-    fj = out_dir / "files.json"
-    if fj.exists():
-        meta = json.loads(fj.read_text(encoding="utf-8"))
-        files_meta = {f["path"]: f for f in meta["files"]}
-        roots = [Path(r) for r in meta.get("roots", [])]
-
-    tokens = [t.lower() for t in args.tokens.split() if t.strip()]
-    if not tokens:
-        _fail("empty token list")
-
-    nodes = data["nodes"]
-    edges = data.get("edges", data.get("links", []))
-
-    # substring + IDF scoring (mirrors graphify's matcher)
-    n_total = max(len(nodes), 1)
-    df = {t: sum(1 for n in nodes if t in (n.get("label", "").lower())) for t in tokens}
-    import math
-    idf = {t: math.log(n_total / (1 + df[t])) + 1.0 for t in tokens}
-
-    scored = []
-    for n in nodes:
-        lab = (n.get("label", "") or "").lower()
-        s = sum(idf[t] for t in tokens if t in lab)
-        if s > 0:
-            scored.append((s, n))
-    scored.sort(key=lambda x: -x[0])
-    top = scored[: max(args.limit, 1)]
-
-    # adjacency for 1-hop context
-    adj: dict[str, list[tuple[str, str]]] = {}
-    for e in edges:
-        s, t = e.get("source"), e.get("target")
-        rel = e.get("relation", "related")
-        adj.setdefault(s, []).append((t, rel))
-        adj.setdefault(t, []).append((s, rel))
-    by_id = {n["id"]: n for n in nodes}
-
-    results = []
-    for score, n in top:
-        neighbors = []
-        stack = [(n["id"], 0)]
-        seen = {n["id"]}
-        max_depth = 3 if args.dfs else 1
-        while stack and len(neighbors) < 12:
-            nid, depth = stack.pop() if args.dfs else stack.pop(0)
-            if depth >= max_depth:
-                continue
-            for other, rel in adj.get(nid, []):
-                if other in seen:
-                    continue
-                seen.add(other)
-                on = by_id.get(other)
-                if on:
-                    neighbors.append({"label": on.get("label"), "relation": rel})
-                    stack.append((other, depth + 1))
-        src, line = _resolve_path(n, roots)
-        meta = files_meta.get(src or "", {})
-        results.append({
-            "id": n["id"], "label": n.get("label"), "score": round(score, 3),
-            "file_type": n.get("file_type") or n.get("type"),
-            "path": src, "line": line,
-            "size": meta.get("size"), "mtime": meta.get("mtime"),
-            "neighbors": neighbors,
-        })
-    _emit({"tokens": tokens, "results": results})
-
-
-# ---------------------------------------------------------------------------
-# text extraction (for agent summaries / content search on PDFs)
+# text extraction (agent read_file, preview, content search, FTS build)
 # ---------------------------------------------------------------------------
 
 TEXT_SUFFIXES = {
@@ -503,6 +320,7 @@ def cmd_text(args: argparse.Namespace) -> None:
 # indexed regardless, so images/videos stay findable by filename.
 FTS_CONTENT_SUFFIXES = TEXT_SUFFIXES | {".pdf", ".docx", ".odt"}
 FTS_MAX_CHARS = 300_000
+FTS_MAX_FILE_BYTES = 50_000_000  # don't extract from files beyond 50 MB
 
 
 def _fts_connect(out_dir: Path):
@@ -535,7 +353,8 @@ def _build_fts(out_dir: Path, files: list[dict]) -> int:
             continue
         fp = Path(p)
         text = ""
-        if fp.suffix.lower() in FTS_CONTENT_SUFFIXES:
+        if (fp.suffix.lower() in FTS_CONTENT_SUFFIXES
+                and f["size"] <= FTS_MAX_FILE_BYTES):
             text = _extract_text(fp, FTS_MAX_CHARS)
             if text.startswith("(") and text.endswith(")") and len(text) < 200:
                 text = ""
@@ -581,6 +400,10 @@ def cmd_fts(args: argparse.Namespace) -> None:
         {"path": r[0], "name": r[1], "score": round(-r[2], 3),
          "snippet": r[3], "size": r[4], "mtime": r[5]} for r in rows]})
 
+
+# ---------------------------------------------------------------------------
+# literal content search (exact locations: line / pdf page)
+# ---------------------------------------------------------------------------
 
 def cmd_search(args: argparse.Namespace) -> None:
     """Content search: literal needle, case-insensitive, line hits + snippets.
@@ -665,17 +488,6 @@ def main() -> None:
     p = sub.add_parser("update")
     p.add_argument("--out", required=True)
     p.set_defaults(fn=cmd_update)
-
-    p = sub.add_parser("vocab")
-    p.add_argument("--out", required=True)
-    p.set_defaults(fn=cmd_vocab)
-
-    p = sub.add_parser("query")
-    p.add_argument("--out", required=True)
-    p.add_argument("--tokens", required=True)
-    p.add_argument("--dfs", action="store_true")
-    p.add_argument("--limit", type=int, default=8)
-    p.set_defaults(fn=cmd_query)
 
     p = sub.add_parser("text")
     p.add_argument("--path", required=True)

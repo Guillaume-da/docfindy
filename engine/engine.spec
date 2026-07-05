@@ -8,13 +8,6 @@ a = Analysis(
     binaries=[],
     datas=[],
     hiddenimports=[
-        'graphify',
-        'graphify.detect',
-        'graphify.extract',
-        'graphify.build',
-        'graphify.cluster',
-        'graphify.export',
-        'networkx',
         'pypdf',
         'sqlite3',
     ],

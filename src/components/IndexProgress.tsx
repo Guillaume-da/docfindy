@@ -26,10 +26,8 @@ export default function IndexProgress() {
       case "detect":
       case "detected":
         return t("index.stage_detect", { root: ev.root ?? "" });
-      case "ast":
-        return t("index.stage_ast");
-      case "graph":
-        return t("index.stage_graph");
+      case "fts":
+        return t("index.stage_fts");
       default:
         return t("onboarding.indexing");
     }

@@ -1,11 +1,11 @@
 # Findy
 
-AI file-finding agent for the desktop. Chat with it in English or Spanish, it finds any file on your machine via a local [graphify](https://graphify.net) knowledge graph, shows the path, previews the document, and opens it in your browser.
+AI file-finding agent for the desktop. Chat with it in English or Spanish, it finds any document on your machine by name or content (SQLite FTS5 index), shows the path, previews the document, and opens it in your browser.
 
 ## Architecture
 
 - **Tauri 2** (Rust) — shell, Claude API client with tool-use loop, OS keychain storage
-- **findy-engine** (Python sidecar) — graphify wrapper: builds and queries the knowledge graph (`graphifyy` on PyPI). AST extraction is deterministic, no LLM key needed for indexing.
+- **findy-engine** (Python sidecar) — document indexer: walks the chosen roots (system dirs and dev noise excluded), extracts text from pdf/docx/odt/plain files, and maintains a SQLite FTS5 index (accent-insensitive, BM25-ranked). Only dependency: pypdf.
 - **rtk** (Rust sidecar) — [Rust Token Killer](https://github.com/rtk-ai/rtk): compresses filesystem probe output before it enters the Claude context (60-90% token savings)
 - **caveman** — [terse-output prompt rules](https://github.com/JuliusBrussee/caveman) baked into the agent system prompt (~65% output-token savings)
 - **React + Tailwind 4** — chat UI, EN/ES toggle, integrated preview pane
@@ -15,8 +15,6 @@ AI file-finding agent for the desktop. Chat with it in English or Spanish, it fi
 | Tool | Purpose |
 |------|---------|
 | `doc_search` | SQLite FTS5 full-text search over file names + content (pdf/docx/odt/text), accent-insensitive, BM25-ranked — primary search tool |
-| `graph_vocab` | vocabulary of graph node labels (query expansion, cross-language) |
-| `graph_query` | ranked BFS/DFS traversal over the knowledge graph (code entities) |
 | `fs_probe` | rtk-compressed filename scan fallback |
 | `content_search` | literal term lookup with exact line/page locations |
 | `read_file` | text extraction (txt/code/pdf/docx/odt) for syntheses |
@@ -26,7 +24,7 @@ AI file-finding agent for the desktop. Chat with it in English or Spanish, it fi
 
 ```bash
 # prerequisites: rust, node 18+, python 3.10+, Tauri Linux deps
-python3 -m venv engine/.venv && engine/.venv/bin/pip install graphifyy
+python3 -m venv engine/.venv && engine/.venv/bin/pip install pypdf
 npm install
 npm run tauri dev
 ```
@@ -46,4 +44,4 @@ Trigger on tag `v*` or manually. Artifact: `findy-windows-installer`.
 
 - API key: OS keychain (Windows Credential Manager), file fallback
 - Settings: `<config>/com.guillaume.findy/settings.json`
-- Index: `<data>/com.guillaume.findy/graphify-out/graph.json` + `files.json`
+- Index: `<data>/com.guillaume.findy/graphify-out/content.db` + `files.json`

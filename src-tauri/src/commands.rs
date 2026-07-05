@@ -46,9 +46,9 @@ pub fn index_status(app: tauri::AppHandle) -> Value {
     let Ok(dir) = engine::index_dir(&app) else {
         return json!({"exists": false});
     };
-    let graph = dir.join("graph.json");
+    let content_db = dir.join("content.db");
     let files = dir.join("files.json");
-    if !graph.exists() {
+    if !content_db.exists() || !files.exists() {
         return json!({"exists": false});
     }
     let meta: Value = fs::read_to_string(files)

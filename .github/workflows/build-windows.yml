@@ -21,11 +21,11 @@ jobs:
         with:
           python-version: "3.12"
 
-      # --- sidecar 1: findy-engine (graphify wrapper, PyInstaller onefile)
+      # --- sidecar 1: findy-engine (document indexer, PyInstaller onefile)
       - name: Build findy-engine sidecar
         working-directory: engine
         run: |
-          pip install graphifyy pypdf pyinstaller
+          pip install pypdf pyinstaller
           pyinstaller engine.spec
         shell: bash
 
