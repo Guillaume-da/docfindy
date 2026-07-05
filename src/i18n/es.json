@@ -1,14 +1,16 @@
 {
   "app": { "name": "Findy", "tagline": "Encuentra cualquier archivo. Solo pregunta." },
   "chat": {
-    "placeholder": "Describe el archivo que buscas…",
+    "placeholder": "Busca por nombre o contenido…",
     "send": "Enviar",
     "thinking": "Buscando…",
-    "empty": "Pídeme encontrar cualquier archivo en este equipo.",
-    "examples": "Prueba: \"busca la hoja de presupuesto\" · \"el PDF de impuestos\" · \"mi currículum\"",
+    "empty": "Empieza a escribir para encontrar cualquier archivo — por nombre o por su contenido.",
+    "examples": "Prueba: \"presupuesto\" · \"impuestos\" · \"currículum\"",
     "error": "Algo salió mal",
     "noKey": "Añade tu clave API de Claude en Ajustes para empezar a buscar.",
-    "candidates": "{{count}} resultados — haz clic para previsualizar"
+    "candidates": "{{count}} resultados — haz clic para previsualizar",
+    "noResults": "Sin archivos coincidentes.",
+    "clear": "Borrar"
   },
   "preview": {
     "title": "Vista previa",
@@ -22,7 +24,10 @@
     "modified": "Modificado",
     "outline": "Esquema",
     "showOutline": "Mostrar esquema",
-    "hideOutline": "Ocultar esquema"
+    "hideOutline": "Ocultar esquema",
+    "aiSummary": "Resumen IA",
+    "summarizing": "leyendo…",
+    "aiNoKey": "Añade una clave API de Claude en Ajustes para obtener resúmenes IA."
   },
   "settings": {
     "title": "Ajustes",
@@ -39,8 +44,8 @@
   },
   "onboarding": {
     "welcome": "Bienvenido a Findy",
-    "intro": "Findy construye un grafo de conocimiento local de tus archivos y encuentra lo que describas en lenguaje natural.",
-    "step1": "1 · Pega tu clave API de Claude",
+    "intro": "Findy indexa tus archivos localmente y los encuentra al instante mientras escribes — por nombre o por contenido.",
+    "step1": "1 · Clave API de Claude (opcional)",
     "step2": "2 · Elige carpetas para indexar",
     "start": "Construir índice y empezar",
     "indexing": "Construyendo grafo de conocimiento…",

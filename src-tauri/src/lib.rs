@@ -18,6 +18,8 @@ pub fn run() {
             commands::detect_paths,
             commands::build_index,
             commands::update_index,
+            commands::quick_search,
+            commands::summarize_file,
             commands::chat,
             commands::read_preview,
             commands::open_in_browser,

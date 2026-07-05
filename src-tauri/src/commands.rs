@@ -97,6 +97,41 @@ pub async fn update_index(app: tauri::AppHandle) -> Result<Value, String> {
     engine::run(&app, &args, true).await
 }
 
+/// Instant search-as-you-type: query the FTS index directly (no LLM).
+/// Returns `{query, terms, hits: [...]}` from the engine, or empty for a
+/// blank query.
+#[tauri::command]
+pub async fn quick_search(app: tauri::AppHandle, query: String) -> Result<Value, String> {
+    let q = query.trim();
+    if q.is_empty() {
+        return Ok(json!({ "hits": [] }));
+    }
+    let out = engine::index_dir(&app)?.to_string_lossy().into_owned();
+    let args: Vec<String> = vec![
+        "fts".into(), "--out".into(), out,
+        "--query".into(), q.to_string(),
+        "--limit".into(), "25".into(),
+    ];
+    engine::run(&app, &args, false).await
+}
+
+/// AI summary of the previewed document: `{tldr, points}`. Needs the Claude
+/// API key; errors with "no_api_key" if it is not set (UI hides the panel).
+#[tauri::command]
+pub async fn summarize_file(app: tauri::AppHandle, path: String) -> Result<Value, String> {
+    let api_key = secrets::get(&app).ok_or("no_api_key")?;
+    let settings = load_settings(&app);
+    let lang = settings["lang"].as_str().unwrap_or("en").to_string();
+    let model = settings["model"].as_str().unwrap_or("claude-sonnet-5").to_string();
+    let text_args: Vec<String> = vec![
+        "text".into(), "--path".into(), path,
+        "--max-chars".into(), "12000".into(),
+    ];
+    let v = engine::run(&app, &text_args, false).await?;
+    let text = v["text"].as_str().unwrap_or_default();
+    claude::summarize(&api_key, &model, &lang, text).await
+}
+
 #[derive(Deserialize)]
 pub struct ChatMsg {
     pub role: String,

@@ -323,3 +323,66 @@ pub async fn agent_loop(
 
     Ok(AgentResult { text: final_text, shown })
 }
+
+/// One-shot document summary for the preview pane: a punchy TL;DR plus the
+/// main points. Returns `{"tldr": "...", "points": ["...", ...]}`.
+pub async fn summarize(
+    api_key: &str,
+    model: &str,
+    lang: &str,
+    text: &str,
+) -> Result<Value, String> {
+    if text.trim().is_empty() {
+        return Err("empty document".into());
+    }
+    let lang_line = match lang {
+        "es" => "Escribe en español.",
+        _ => "Write in English.",
+    };
+    let system = format!(
+        "You write a crisp preview of a document. Reply with ONLY a JSON object, \
+         no markdown fences, no commentary: \
+         {{\"tldr\": \"one vivid sentence saying what this document is\", \
+         \"points\": [\"3 to 6 key takeaways, each a short punchy phrase\"]}}. \
+         {lang_line}"
+    );
+    let client = reqwest::Client::new();
+    let body = json!({
+        "model": model,
+        "max_tokens": 600,
+        "system": system,
+        "messages": [{"role": "user", "content": format!("Document:\n\n{text}")}],
+    });
+    let resp = client
+        .post(API_URL)
+        .header("x-api-key", api_key)
+        .header("anthropic-version", "2023-06-01")
+        .header("content-type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("network: {e}"))?;
+
+    let status = resp.status();
+    let data: Value = resp.json().await.map_err(|e| e.to_string())?;
+    if !status.is_success() {
+        let msg = data["error"]["message"].as_str().unwrap_or("API error");
+        return Err(format!("Claude API {status}: {msg}"));
+    }
+
+    let raw = data["content"]
+        .as_array()
+        .and_then(|a| a.iter().find_map(|b| b["text"].as_str()))
+        .unwrap_or_default()
+        .trim();
+    // tolerate ```json fences or stray prose around the JSON
+    let start = raw.find('{');
+    let end = raw.rfind('}');
+    let parsed = match (start, end) {
+        (Some(s), Some(e)) if e > s => {
+            serde_json::from_str::<Value>(&raw[s..=e]).ok()
+        }
+        _ => None,
+    };
+    Ok(parsed.unwrap_or_else(|| json!({ "tldr": raw, "points": [] })))
+}

@@ -81,7 +81,9 @@ export default function App() {
     setSettings(s);
     setIndexStatus(idx);
     if (s.lang) i18n.changeLanguage(s.lang);
-    setNeedsOnboarding(!hasKey || !idx.exists);
+    // Instant search needs only an index; the Claude API key is optional.
+    void hasKey;
+    setNeedsOnboarding(!idx.exists);
     setReady(true);
   }, [i18n]);
 

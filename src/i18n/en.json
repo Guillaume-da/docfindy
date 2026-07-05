@@ -1,14 +1,16 @@
 {
   "app": { "name": "Findy", "tagline": "Find any file. Just ask." },
   "chat": {
-    "placeholder": "Describe the file you're looking for…",
+    "placeholder": "Search by name or content…",
     "send": "Send",
     "thinking": "Searching…",
-    "empty": "Ask me to find any file on this computer.",
-    "examples": "Try: \"find the budget spreadsheet\" · \"the PDF about taxes\" · \"my resume\"",
+    "empty": "Start typing to find any file — by name or by what's inside.",
+    "examples": "Try: \"budget\" · \"tax\" · \"resume\"",
     "error": "Something went wrong",
     "noKey": "Add your Claude API key in Settings to start searching.",
-    "candidates": "{{count}} matches — click to preview"
+    "candidates": "{{count}} matches — click to preview",
+    "noResults": "No matching files.",
+    "clear": "Clear"
   },
   "preview": {
     "title": "Preview",
@@ -22,7 +24,10 @@
     "modified": "Modified",
     "outline": "Outline",
     "showOutline": "Show outline",
-    "hideOutline": "Hide outline"
+    "hideOutline": "Hide outline",
+    "aiSummary": "AI summary",
+    "summarizing": "reading…",
+    "aiNoKey": "Add a Claude API key in Settings to get AI summaries."
   },
   "settings": {
     "title": "Settings",
@@ -39,8 +44,8 @@
   },
   "onboarding": {
     "welcome": "Welcome to Findy",
-    "intro": "Findy builds a local knowledge graph of your files, then finds anything you describe in plain language.",
-    "step1": "1 · Paste your Claude API key",
+    "intro": "Findy indexes your files locally and finds them instantly as you type — by name or by content.",
+    "step1": "1 · Claude API key (optional)",
     "step2": "2 · Choose folders to index",
     "start": "Build index & start",
     "indexing": "Building knowledge graph…",

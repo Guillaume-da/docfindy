@@ -1,13 +1,37 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { useTranslation } from "react-i18next";
-import ReactMarkdown from "react-markdown";
-import type { ChatMessage, ShownFile } from "../types";
 
-interface ChatResult {
-  text: string;
-  shown: ShownFile[];
+interface Hit {
+  path: string;
+  name: string;
+  score: number;
+  snippet: string;
+  size?: number;
+  mtime?: number;
+}
+
+interface SearchResult {
+  hits: Hit[];
+  note?: string;
+}
+
+// FTS snippets mark matched terms with [ ]; render those highlighted.
+function Snippet({ text }: { text: string }) {
+  const parts = text.split(/(\[[^\]]*\])/g);
+  return (
+    <>
+      {parts.map((p, i) =>
+        p.startsWith("[") && p.endsWith("]") ? (
+          <mark key={i} className="rounded bg-accent-2/25 px-0.5 text-txt">
+            {p.slice(1, -1)}
+          </mark>
+        ) : (
+          <span key={i}>{p}</span>
+        ),
+      )}
+    </>
+  );
 }
 
 export default function Chat({
@@ -16,176 +40,125 @@ export default function Chat({
   onShowFile: (path: string, summary?: string | null) => void;
 }) {
   const { t } = useTranslation();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [input, setInput] = useState("");
+  const [q, setQ] = useState("");
+  const [hits, setHits] = useState<Hit[]>([]);
+  const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [activity, setActivity] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [activePath, setActivePath] = useState<string | null>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const seq = useRef(0);
+
+  // search-as-you-type: debounced, with stale-response guarding
+  useEffect(() => {
+    const query = q.trim();
+    if (!query) {
+      setHits([]);
+      setNote(null);
+      setBusy(false);
+      return;
+    }
+    const id = ++seq.current;
+    setBusy(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await invoke<SearchResult>("quick_search", { query });
+        if (id !== seq.current) return; // a newer keystroke already fired
+        setHits(res.hits ?? []);
+        setNote(res.note ?? null);
+      } catch (e) {
+        if (id !== seq.current) return;
+        setHits([]);
+        setNote(String(e));
+      } finally {
+        if (id === seq.current) setBusy(false);
+      }
+    }, 160);
+    return () => clearTimeout(timer);
+  }, [q]);
 
   const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
 
-  function pick(f: ShownFile) {
-    setActivePath(f.path);
-    onShowFile(f.path, f.summary);
+  function pick(h: Hit) {
+    setActivePath(h.path);
+    onShowFile(h.path);
   }
-
-  useEffect(() => {
-    const un = listen<{ tool: string }>("agent-activity", (e) => {
-      setActivity(e.payload.tool);
-    });
-    return () => {
-      un.then((f) => f());
-    };
-  }, []);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, busy]);
-
-  async function send() {
-    const text = input.trim();
-    if (!text || busy) return;
-    setError(null);
-    setInput("");
-    const next: ChatMessage[] = [...messages, { role: "user", content: text }];
-    setMessages(next);
-    setBusy(true);
-    setActivity(null);
-    try {
-      const res = await invoke<ChatResult>("chat", { messages: next });
-      const shown = res.shown.filter((s) => s.exists);
-      setMessages([...next, { role: "assistant", content: res.text, shown }]);
-      if (shown.length) pick(shown[0]);
-    } catch (e) {
-      const msg = String(e);
-      setError(msg === "no_api_key" ? t("chat.noKey") : `${t("chat.error")}: ${msg}`);
-      setMessages(next);
-    } finally {
-      setBusy(false);
-      setActivity(null);
-    }
-  }
-
-  const activityLabel: Record<string, string> = {
-    doc_search: "search",
-    content_search: "content search",
-    read_file: "reading",
-    fs_probe: "disk scan",
-    show_file: "preview",
-  };
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
-        {messages.length === 0 && (
+      <div className="border-b border-edge bg-panel p-4">
+        <div className="flex items-center gap-2 rounded-2xl border border-edge bg-panel-2 px-3 py-2 focus-within:border-accent/60">
+          <span className="text-muted">🔍</span>
+          <input
+            autoFocus
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder={t("chat.placeholder")}
+            className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted/60"
+          />
+          {busy && (
+            <span className="thinking-dot h-2 w-2 rounded-full bg-accent-2" />
+          )}
+          {q && (
+            <button
+              onClick={() => setQ("")}
+              className="text-muted transition hover:text-txt"
+              title={t("chat.clear")}
+            >
+              ×
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+        {!q.trim() && (
           <div className="mt-16 text-center">
             <div className="bg-gradient-to-r from-accent to-accent-2 bg-clip-text text-2xl font-bold text-transparent">
               {t("app.tagline")}
             </div>
             <p className="mt-3 text-sm text-muted">{t("chat.empty")}</p>
-            <p className="mt-1 text-xs text-muted/70">{t("chat.examples")}</p>
           </div>
         )}
-        {messages.map((m, i) => (
-          <div key={i} className={m.role === "user" ? "flex justify-end" : "flex flex-col"}>
-            <div
+
+        {note && (
+          <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-2.5 text-sm text-amber-200">
+            {note}
+          </div>
+        )}
+
+        {q.trim() && !busy && hits.length === 0 && !note && (
+          <div className="mt-8 text-center text-sm text-muted">
+            {t("chat.noResults")}
+          </div>
+        )}
+
+        <div className="space-y-1.5">
+          {hits.map((h) => (
+            <button
+              key={h.path}
+              onClick={() => pick(h)}
               className={
-                "max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed " +
-                (m.role === "user"
-                  ? "self-end bg-gradient-to-r from-accent/90 to-accent/70 text-white"
-                  : "border border-edge bg-panel-2")
+                "group flex w-full items-start gap-2 rounded-xl border px-3 py-2 text-left transition " +
+                (activePath === h.path
+                  ? "border-accent/60 bg-accent/10"
+                  : "border-edge bg-panel-2 hover:border-accent-2/50")
               }
             >
-              {m.role === "assistant" ? (
-                <div className="prose-invert prose-sm [&_code]:rounded [&_code]:bg-ink/60 [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-accent-2 [&_p]:my-1">
-                  <ReactMarkdown>{m.content}</ReactMarkdown>
-                </div>
-              ) : (
-                m.content
-              )}
-            </div>
-            {m.shown && m.shown.length > 0 && (
-              <div className="mt-2 flex max-w-[85%] flex-col gap-1.5">
-                {m.shown.length > 1 && (
-                  <div className="text-[10px] font-bold uppercase tracking-widest text-muted">
-                    {t("chat.candidates", { count: m.shown.length })}
-                  </div>
+              <span className="mt-0.5 shrink-0 text-accent-2">📄</span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-xs font-semibold text-txt">
+                  {baseName(h.path)}
+                </span>
+                {h.snippet && (
+                  <span className="mt-0.5 block line-clamp-2 text-[11px] leading-snug text-muted">
+                    <Snippet text={h.snippet} />
+                  </span>
                 )}
-                {m.shown.map((f) => (
-                  <button
-                    key={f.path}
-                    onClick={() => pick(f)}
-                    className={
-                      "group flex items-start gap-2 rounded-xl border px-3 py-2 text-left transition " +
-                      (activePath === f.path
-                        ? "border-accent/60 bg-accent/10"
-                        : "border-edge bg-panel-2 hover:border-accent-2/50")
-                    }
-                  >
-                    <span className="mt-0.5 shrink-0 text-accent-2">📄</span>
-                    <span className="min-w-0">
-                      <span className="block truncate text-xs font-semibold text-txt">
-                        {baseName(f.path)}
-                      </span>
-                      {f.summary && (
-                        <span className="mt-0.5 block truncate text-[11px] text-muted">
-                          {f.summary}
-                        </span>
-                      )}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
-        {busy && (
-          <div className="flex items-center gap-2 text-sm text-muted">
-            <span className="flex gap-1">
-              <span className="thinking-dot h-2 w-2 rounded-full bg-accent" />
-              <span className="thinking-dot h-2 w-2 rounded-full bg-accent" />
-              <span className="thinking-dot h-2 w-2 rounded-full bg-accent" />
-            </span>
-            {t("chat.thinking")}
-            {activity && (
-              <span className="rounded-full border border-edge bg-panel-2 px-2 py-0.5 text-xs">
-                {activityLabel[activity] ?? activity}
+                <span className="mt-0.5 block truncate text-[10px] text-accent-2/70">
+                  {h.path}
+                </span>
               </span>
-            )}
-          </div>
-        )}
-        {error && (
-          <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-2.5 text-sm text-red-300">
-            {error}
-          </div>
-        )}
-        <div ref={bottomRef} />
-      </div>
-
-      <div className="border-t border-edge bg-panel p-4">
-        <div className="flex items-end gap-2 rounded-2xl border border-edge bg-panel-2 p-2 focus-within:border-accent/60">
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                send();
-              }
-            }}
-            rows={1}
-            placeholder={t("chat.placeholder")}
-            className="max-h-32 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm outline-none placeholder:text-muted/60"
-          />
-          <button
-            onClick={send}
-            disabled={busy || !input.trim()}
-            className="rounded-xl bg-gradient-to-r from-accent to-accent-2 px-4 py-2 text-sm font-semibold text-ink transition disabled:opacity-40"
-          >
-            {t("chat.send")}
-          </button>
+            </button>
+          ))}
         </div>
       </div>
     </div>
