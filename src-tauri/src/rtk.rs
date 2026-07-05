@@ -43,10 +43,11 @@ pub async fn probe(dir: &str, pattern: &str) -> String {
         .collect();
 
     if let Some(rtk) = rtk_program() {
-        let out = Command::new(&rtk)
-            .args(["find", dir, "-iname", &format!("*{pat}*"), "-type", "f"])
-            .output()
-            .await;
+        let mut cmd = Command::new(&rtk);
+        cmd.args(["find", dir, "-iname", &format!("*{pat}*"), "-type", "f"]);
+        #[cfg(windows)]
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+        let out = cmd.output().await;
         if let Ok(o) = out {
             if o.status.success() {
                 let s = String::from_utf8_lossy(&o.stdout).trim().to_string();

@@ -49,10 +49,17 @@ pub async fn run(
     let (prog, mut base) = engine_command();
     base.extend(args.iter().cloned());
 
-    let mut child = Command::new(&prog)
-        .args(&base)
+    let mut cmd = Command::new(&prog);
+    cmd.args(&base)
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    // Windows: CREATE_NO_WINDOW — the console sidecar is spawned on every
+    // keystroke for instant search; without this a black console window pops
+    // up each time and steals focus.
+    #[cfg(windows)]
+    cmd.creation_flags(0x0800_0000);
+
+    let mut child = cmd
         .spawn()
         .map_err(|e| format!("engine spawn failed ({prog}): {e}"))?;
 
