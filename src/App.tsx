@@ -25,7 +25,7 @@ function errorPreview(
 }
 
 export default function App() {
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [ready, setReady] = useState(false);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -132,7 +132,7 @@ export default function App() {
         </div>
         {indexStatus?.files ? (
           <span className="ml-2 rounded-full border border-edge bg-panel-2 px-3 py-1 text-xs text-muted">
-            {indexStatus.files.toLocaleString()} files
+            {t("index.files", { count: indexStatus.files })}
           </span>
         ) : null}
         <div className="ml-auto flex items-center gap-2">

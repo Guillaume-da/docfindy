@@ -118,10 +118,17 @@ pub async fn quick_search(app: tauri::AppHandle, query: String) -> Result<Value,
 /// AI summary of the previewed document: `{tldr, points}`. Needs the Claude
 /// API key; errors with "no_api_key" if it is not set (UI hides the panel).
 #[tauri::command]
-pub async fn summarize_file(app: tauri::AppHandle, path: String) -> Result<Value, String> {
+pub async fn summarize_file(
+    app: tauri::AppHandle,
+    path: String,
+    lang: Option<String>,
+) -> Result<Value, String> {
     let api_key = secrets::get(&app).ok_or("no_api_key")?;
     let settings = load_settings(&app);
-    let lang = settings["lang"].as_str().unwrap_or("en").to_string();
+    // caller passes the UI's current language so the summary follows the toggle
+    let lang = lang
+        .filter(|l| !l.trim().is_empty())
+        .unwrap_or_else(|| settings["lang"].as_str().unwrap_or("en").to_string());
     let model = settings["model"].as_str().unwrap_or("claude-sonnet-5").to_string();
     let text_args: Vec<String> = vec![
         "text".into(), "--path".into(), path,

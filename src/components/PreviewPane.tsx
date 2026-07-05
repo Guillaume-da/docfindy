@@ -111,9 +111,11 @@ export default function PreviewPane({ preview }: { preview: Preview | null }) {
   const [aiBusy, setAiBusy] = useState(false);
   const [aiNoKey, setAiNoKey] = useState(false);
 
-  // Generate an AI summary whenever a summarizable document is shown.
+  // Generate an AI summary whenever a summarizable document is shown, or when
+  // the UI language changes (so the summary follows the EN/ES toggle).
   const path = preview?.path;
   const kind = preview?.kind;
+  const lang = i18n.language?.startsWith("es") ? "es" : "en";
   useEffect(() => {
     setAi(null);
     setAiNoKey(false);
@@ -123,7 +125,7 @@ export default function PreviewPane({ preview }: { preview: Preview | null }) {
     }
     let cancelled = false;
     setAiBusy(true);
-    invoke<AiSummary>("summarize_file", { path })
+    invoke<AiSummary>("summarize_file", { path, lang })
       .then((r) => {
         if (!cancelled) setAi(r);
       })
@@ -136,7 +138,7 @@ export default function PreviewPane({ preview }: { preview: Preview | null }) {
     return () => {
       cancelled = true;
     };
-  }, [path, kind]);
+  }, [path, kind, lang]);
 
   if (!preview) {
     return (
