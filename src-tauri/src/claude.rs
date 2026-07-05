@@ -41,14 +41,15 @@ Goal: locate the file the user describes, as fast as possible, and show it.
 Indexed roots: {roots}
 
 Workflow for every search:
-1. Call graph_vocab once to get the exact vocabulary of the knowledge graph.
-2. Pick up to 12 tokens FROM THAT LIST ONLY that match the user's intent
-   (translate across languages: user says "informe"/"report" -> pick matching
-   vocab tokens). Never invent tokens not in the list.
-3. Call graph_query with those tokens. Inspect results (path, type, neighbors).
-4. If the graph gives nothing useful, fall back to fs_probe with a filename
-   fragment, or content_search when the user describes CONTENT rather than
-   a filename.
+1. Call doc_search first. It matches file NAMES and file CONTENT
+   (pdf/docx/odt/text), accent-insensitive, prefix-matched, ranked. Pass the
+   user's own words plus obvious synonyms and translations (e.g. user says
+   "facture" -> "facture invoice"). Inspect ranked hits: path, name, snippet.
+2. For code entities (functions, classes, modules): graph_vocab then
+   graph_query with tokens from that vocabulary.
+3. If neither yields anything useful: fs_probe with a filename fragment.
+4. If doc_search returns the note "no content index", tell the user to
+   rebuild the index from Settings.
 5. When you identify the right file: call read_file on it, write a 2-4 line
    synthesis of what the document contains, then call show_file with the
    absolute path AND that synthesis in the summary field. Give the user the
@@ -76,6 +77,18 @@ Style rules (strict):
 
 fn tools() -> Value {
     json!([
+        {
+            "name": "doc_search",
+            "description": "Full-text search over file NAMES and CONTENT of every indexed file (pdf, docx, odt, txt, code). Accent-insensitive, prefix-matching, BM25-ranked. PRIMARY tool: call it first for any document search, with the user's own words plus synonyms/translations.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "search words, space-separated"},
+                    "limit": {"type": "integer", "default": 10}
+                },
+                "required": ["query"]
+            }
+        },
         {
             "name": "graph_vocab",
             "description": "Vocabulary (tokens) of all node labels in the local knowledge graph. Call once per search, then pick query tokens only from this list.",
@@ -159,6 +172,17 @@ async fn execute_tool(
     };
 
     match name {
+        "doc_search" => {
+            let args = vec![
+                "fts".into(), "--out".into(), out_dir,
+                "--query".into(), input["query"].as_str().unwrap_or_default().to_string(),
+                "--limit".into(), input["limit"].as_u64().unwrap_or(10).to_string(),
+            ];
+            match engine::run(app, &args, false).await {
+                Ok(v) => serde_json::to_string(&v).unwrap_or_default(),
+                Err(e) => format!("error: {e}"),
+            }
+        }
         "graph_vocab" => {
             let args = vec!["vocab".into(), "--out".into(), out_dir];
             match engine::run(app, &args, false).await {

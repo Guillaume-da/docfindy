@@ -14,9 +14,12 @@ AI file-finding agent for the desktop. Chat with it in English or Spanish, it fi
 
 | Tool | Purpose |
 |------|---------|
+| `doc_search` | SQLite FTS5 full-text search over file names + content (pdf/docx/odt/text), accent-insensitive, BM25-ranked — primary search tool |
 | `graph_vocab` | vocabulary of graph node labels (query expansion, cross-language) |
-| `graph_query` | ranked BFS/DFS traversal over the knowledge graph |
+| `graph_query` | ranked BFS/DFS traversal over the knowledge graph (code entities) |
 | `fs_probe` | rtk-compressed filename scan fallback |
+| `content_search` | literal term lookup with exact line/page locations |
+| `read_file` | text extraction (txt/code/pdf/docx/odt) for syntheses |
 | `show_file` | display file in the preview pane |
 
 ## Dev (Linux/WSL)

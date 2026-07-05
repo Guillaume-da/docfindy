@@ -16,6 +16,7 @@ a = Analysis(
         'graphify.export',
         'networkx',
         'pypdf',
+        'sqlite3',
     ],
     hookspath=[],
     excludes=['tkinter', 'matplotlib', 'PIL'],

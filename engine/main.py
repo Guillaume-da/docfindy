@@ -227,10 +227,14 @@ def _build(out_dir: Path, roots: list[Path]) -> None:
         "files": files_index,
     }, ensure_ascii=False), encoding="utf-8")
 
+    _progress("fts")
+    fts_docs = _build_fts(out_dir, files_index)
+
     _emit({"ok": True, "nodes": G.number_of_nodes(),
            "edges": G.number_of_edges(),
            "communities": len(communities),
-           "files": len(files_index), "seconds": round(time.time() - t0, 1)})
+           "files": len(files_index), "fts_docs": fts_docs,
+           "seconds": round(time.time() - t0, 1)})
 
 
 def cmd_build(args: argparse.Namespace) -> None:
@@ -480,6 +484,93 @@ def cmd_text(args: argparse.Namespace) -> None:
     _emit({"path": str(p), "text": _extract_text(p, args.max_chars)})
 
 
+# ---------------------------------------------------------------------------
+# FTS5 content index (names + extracted text, accent-insensitive, BM25)
+# ---------------------------------------------------------------------------
+
+# suffixes whose *content* goes into the FTS index; every file's *name* is
+# indexed regardless, so images/videos stay findable by filename.
+FTS_CONTENT_SUFFIXES = TEXT_SUFFIXES | {".pdf", ".docx", ".odt"}
+FTS_MAX_CHARS = 300_000
+
+
+def _fts_connect(out_dir: Path):
+    import sqlite3
+    db = sqlite3.connect(out_dir / "content.db")
+    db.execute("CREATE TABLE IF NOT EXISTS meta("
+               "path TEXT PRIMARY KEY, mtime INTEGER, size INTEGER)")
+    db.execute("CREATE VIRTUAL TABLE IF NOT EXISTS docs USING fts5("
+               "path UNINDEXED, name, text, "
+               "tokenize='unicode61 remove_diacritics 2')")
+    return db
+
+
+def _build_fts(out_dir: Path, files: list[dict]) -> int:
+    """Upsert one row per indexed file; re-extract only changed files.
+
+    Extraction-failure sentinels from _extract_text (short parenthesized
+    strings) are dropped so they never pollute search results.
+    """
+    db = _fts_connect(out_dir)
+    old = {p: sig for p, sig in
+           db.execute("SELECT path, mtime || ':' || size FROM meta")}
+    now: set[str] = set()
+    changed = 0
+    for f in files:
+        p = f["path"]
+        now.add(p)
+        sig = f"{f['mtime']}:{f['size']}"
+        if old.get(p) == sig:
+            continue
+        fp = Path(p)
+        text = ""
+        if fp.suffix.lower() in FTS_CONTENT_SUFFIXES:
+            text = _extract_text(fp, FTS_MAX_CHARS)
+            if text.startswith("(") and text.endswith(")") and len(text) < 200:
+                text = ""
+        db.execute("DELETE FROM docs WHERE path = ?", (p,))
+        db.execute("INSERT INTO docs(path, name, text) VALUES (?, ?, ?)",
+                   (p, f["name"], text))
+        db.execute("INSERT INTO meta(path, mtime, size) VALUES (?, ?, ?) "
+                   "ON CONFLICT(path) DO UPDATE SET "
+                   "mtime = excluded.mtime, size = excluded.size",
+                   (p, f["mtime"], f["size"]))
+        changed += 1
+        if changed % 50 == 0:
+            _progress("fts", done=changed)
+    for p in set(old) - now:
+        db.execute("DELETE FROM docs WHERE path = ?", (p,))
+        db.execute("DELETE FROM meta WHERE path = ?", (p,))
+    db.commit()
+    db.close()
+    return changed
+
+
+def cmd_fts(args: argparse.Namespace) -> None:
+    out_dir = Path(args.out)
+    if not (out_dir / "content.db").exists():
+        _emit({"query": args.query, "hits": [],
+               "note": "no content index: rebuild the index first"})
+        return
+    terms = [t for t in re.findall(r"\w+", args.query, re.UNICODE)
+             if len(t) >= 2][:12]
+    if not terms:
+        _fail("empty query")
+    # each term as a quoted prefix phrase — user text can't inject operators
+    match = " OR ".join(f'"{t}"*' for t in terms)
+    db = _fts_connect(out_dir)
+    rows = db.execute(
+        "SELECT docs.path, docs.name, bm25(docs, 0.0, 5.0, 1.0) AS rank, "
+        "snippet(docs, 2, '[', ']', '…', 12), meta.size, meta.mtime "
+        "FROM docs JOIN meta ON meta.path = docs.path "
+        "WHERE docs MATCH ? ORDER BY rank LIMIT ?",
+        (match, max(args.limit, 1))).fetchall()
+    db.close()
+    _emit({"query": args.query, "terms": terms, "hits": [
+        {"path": r[0], "name": r[1], "score": round(-r[2], 3),
+         "snippet": r[3], "size": r[4], "mtime": r[5]} for r in rows]})
+
+
 def cmd_search(args: argparse.Namespace) -> None:
     """Content search: literal needle, case-insensitive, line hits + snippets.
 
@@ -520,6 +611,15 @@ def cmd_search(args: argparse.Namespace) -> None:
                                      "line": None, "snippet": snippet.strip()})
                         if len(hits) >= args.limit:
                             break
+        elif f.suffix.lower() in (".docx", ".odt"):
+            text = _extract_text(f, 400_000)
+            # line numbers are paragraph indexes here — good enough to locate
+            for i, line in enumerate(text.splitlines(), 1):
+                if needle in line.lower():
+                    hits.append({"path": str(f), "page": None,
+                                 "line": i, "snippet": line.strip()[:200]})
+                    if len(hits) >= args.limit:
+                        break
         elif f.suffix.lower() in TEXT_SUFFIXES or not f.suffix:
             try:
                 lines = f.read_text(encoding="utf-8", errors="replace").splitlines()
@@ -577,6 +677,12 @@ def main() -> None:
     p.add_argument("--path")
     p.add_argument("--limit", type=int, default=30)
     p.set_defaults(fn=cmd_search)
+
+    p = sub.add_parser("fts")
+    p.add_argument("--out", required=True)
+    p.add_argument("--query", required=True)
+    p.add_argument("--limit", type=int, default=10)
+    p.set_defaults(fn=cmd_fts)
 
     args = ap.parse_args()
     args.fn(args)
