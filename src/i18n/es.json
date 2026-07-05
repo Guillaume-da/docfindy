@@ -10,7 +10,10 @@
     "noKey": "Añade tu clave API de Claude en Ajustes para empezar a buscar.",
     "candidates": "{{count}} resultados — haz clic para previsualizar",
     "noResults": "Sin archivos coincidentes.",
-    "clear": "Borrar"
+    "clear": "Borrar",
+    "smart": "Búsqueda inteligente (sinónimos + traducciones)",
+    "smartTerms": "buscado",
+    "smartNoKey": "Añade una clave API de Claude en Ajustes para la búsqueda inteligente."
   },
   "preview": {
     "title": "Vista previa",

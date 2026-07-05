@@ -19,6 +19,7 @@ pub fn run() {
             commands::build_index,
             commands::update_index,
             commands::quick_search,
+            commands::smart_search,
             commands::summarize_file,
             commands::ask_document,
             commands::chat,

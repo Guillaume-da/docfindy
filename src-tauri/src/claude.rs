@@ -441,3 +441,65 @@ pub async fn ask(
         .to_string();
     Ok(json!({ "answer": answer }))
 }
+
+/// Expand a search query into related terms (synonyms + FR/EN translations)
+/// for smarter keyword search. Returns the term list (original included).
+pub async fn expand_query(
+    api_key: &str,
+    model: &str,
+    query: &str,
+) -> Result<Vec<String>, String> {
+    let q = query.trim();
+    if q.is_empty() {
+        return Ok(vec![]);
+    }
+    let system = "You expand a file-search query for keyword search. Output ONLY \
+        a JSON array of 4 to 10 short search terms: the user's own key words, \
+        close synonyms, and translations between French and English. Single \
+        words or two-word phrases, lowercase. No explanations, no code fences.";
+    let client = reqwest::Client::new();
+    let body = json!({
+        "model": model,
+        "max_tokens": 300,
+        "system": system,
+        "messages": [{ "role": "user", "content": q }],
+    });
+    let resp = client
+        .post(API_URL)
+        .header("x-api-key", api_key)
+        .header("anthropic-version", "2023-06-01")
+        .header("content-type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("network: {e}"))?;
+
+    let status = resp.status();
+    let data: Value = resp.json().await.map_err(|e| e.to_string())?;
+    if !status.is_success() {
+        let msg = data["error"]["message"].as_str().unwrap_or("API error");
+        return Err(format!("Claude API {status}: {msg}"));
+    }
+    let raw = data["content"]
+        .as_array()
+        .and_then(|a| a.iter().find_map(|b| b["text"].as_str()))
+        .unwrap_or_default()
+        .trim();
+    // parse the JSON array; fall back to the original query on any trouble
+    let terms: Vec<String> = raw
+        .find('[')
+        .zip(raw.rfind(']'))
+        .filter(|(s, e)| e > s)
+        .and_then(|(s, e)| serde_json::from_str::<Vec<String>>(&raw[s..=e]).ok())
+        .unwrap_or_else(|| vec![q.to_string()]);
+    // always keep the user's own words, dedup, cap
+    let mut out = vec![q.to_string()];
+    for t in terms {
+        let t = t.trim().to_string();
+        if !t.is_empty() && !out.iter().any(|x| x.eq_ignore_ascii_case(&t)) {
+            out.push(t);
+        }
+    }
+    out.truncate(10);
+    Ok(out)
+}

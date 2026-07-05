@@ -46,8 +46,35 @@ export default function Chat({
   const [busy, setBusy] = useState(false);
   const [activePath, setActivePath] = useState<string | null>(null);
   const [sel, setSel] = useState(0);
+  const [smartTerms, setSmartTerms] = useState<string[] | null>(null);
   const seq = useRef(0);
   const listRef = useRef<HTMLDivElement>(null);
+
+  async function smartSearch() {
+    const query = q.trim();
+    if (!query || busy) return;
+    const id = ++seq.current; // invalidate any pending instant search
+    setBusy(true);
+    setSmartTerms(null);
+    setNote(null);
+    try {
+      const res = await invoke<SearchResult & { expanded?: string[] }>(
+        "smart_search",
+        { query },
+      );
+      if (id !== seq.current) return;
+      setHits(res.hits ?? []);
+      setSmartTerms(res.expanded ?? []);
+      setSel(0);
+    } catch (e) {
+      if (id !== seq.current) return;
+      setNote(
+        String(e).includes("no_api_key") ? t("chat.smartNoKey") : String(e),
+      );
+    } finally {
+      if (id === seq.current) setBusy(false);
+    }
+  }
 
   // keep the keyboard-selected result scrolled into view
   useEffect(() => {
@@ -59,6 +86,7 @@ export default function Chat({
   // search-as-you-type: debounced, with stale-response guarding
   useEffect(() => {
     const query = q.trim();
+    setSmartTerms(null); // typing returns to plain instant search
     if (!query) {
       setHits([]);
       setNote(null);
@@ -119,6 +147,16 @@ export default function Chat({
           {busy && (
             <span className="thinking-dot h-2 w-2 rounded-full bg-accent-2" />
           )}
+          {q.trim() && (
+            <button
+              onClick={smartSearch}
+              disabled={busy}
+              className="text-sm transition hover:scale-110 disabled:opacity-40"
+              title={t("chat.smart")}
+            >
+              ✨
+            </button>
+          )}
           {q && (
             <button
               onClick={() => setQ("")}
@@ -144,6 +182,22 @@ export default function Chat({
         {note && (
           <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-2.5 text-sm text-amber-200">
             {note}
+          </div>
+        )}
+
+        {smartTerms && smartTerms.length > 0 && (
+          <div className="mb-2 flex flex-wrap items-center gap-1 text-[10px] text-muted">
+            <span className="font-semibold text-accent-2">
+              ✨ {t("chat.smartTerms")}:
+            </span>
+            {smartTerms.map((term, i) => (
+              <span
+                key={i}
+                className="rounded-full border border-edge bg-panel-2 px-2 py-0.5"
+              >
+                {term}
+              </span>
+            ))}
           </div>
         )}
 

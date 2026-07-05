@@ -10,7 +10,10 @@
     "noKey": "Add your Claude API key in Settings to start searching.",
     "candidates": "{{count}} matches — click to preview",
     "noResults": "No matching files.",
-    "clear": "Clear"
+    "clear": "Clear",
+    "smart": "Smart search (synonyms + translations)",
+    "smartTerms": "searched",
+    "smartNoKey": "Add a Claude API key in Settings for smart search."
   },
   "preview": {
     "title": "Preview",

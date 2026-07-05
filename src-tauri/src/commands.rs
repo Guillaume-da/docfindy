@@ -115,6 +115,35 @@ pub async fn quick_search(app: tauri::AppHandle, query: String) -> Result<Value,
     engine::run(&app, &args, false).await
 }
 
+/// Smart search: Claude expands the query (synonyms + FR/EN translations),
+/// then the FTS index is searched with all terms. Returns the engine hits plus
+/// an `expanded` list of the terms used. Needs the API key.
+#[tauri::command]
+pub async fn smart_search(
+    app: tauri::AppHandle,
+    query: String,
+    lang: Option<String>,
+) -> Result<Value, String> {
+    let _ = lang; // reserved; expansion is language-agnostic (handles FR+EN)
+    let q = query.trim();
+    if q.is_empty() {
+        return Ok(json!({ "hits": [], "expanded": [] }));
+    }
+    let api_key = secrets::get(&app).ok_or("no_api_key")?;
+    let settings = load_settings(&app);
+    let model = settings["model"].as_str().unwrap_or("claude-sonnet-5").to_string();
+    let terms = claude::expand_query(&api_key, &model, q).await?;
+    let out = engine::index_dir(&app)?.to_string_lossy().into_owned();
+    let args: Vec<String> = vec![
+        "fts".into(), "--out".into(), out,
+        "--query".into(), terms.join(" "),
+        "--limit".into(), "25".into(),
+    ];
+    let mut v = engine::run(&app, &args, false).await?;
+    v["expanded"] = json!(terms);
+    Ok(v)
+}
+
 /// AI summary of the previewed document: `{tldr, points}`. Needs the Claude
 /// API key; errors with "no_api_key" if it is not set (UI hides the panel).
 #[tauri::command]
