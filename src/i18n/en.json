@@ -27,7 +27,10 @@
     "hideOutline": "Hide outline",
     "aiSummary": "AI summary",
     "summarizing": "reading…",
-    "aiNoKey": "Add a Claude API key in Settings to get AI summaries."
+    "aiNoKey": "Add a Claude API key in Settings to get AI summaries.",
+    "open": "Open",
+    "reveal": "Reveal",
+    "ask": "Ask about this document…"
   },
   "settings": {
     "title": "Settings",

@@ -386,3 +386,58 @@ pub async fn summarize(
     };
     Ok(parsed.unwrap_or_else(|| json!({ "tldr": raw, "points": [] })))
 }
+
+/// Answer a question about a single document. Returns `{"answer": "..."}`.
+pub async fn ask(
+    api_key: &str,
+    model: &str,
+    lang: &str,
+    text: &str,
+    question: &str,
+) -> Result<Value, String> {
+    if text.trim().is_empty() {
+        return Err("empty document".into());
+    }
+    let lang_line = match lang {
+        "es" => "Responde en español.",
+        _ => "Answer in English.",
+    };
+    let system = format!(
+        "Answer the question using ONLY the document below. Be concise (1-3 \
+         sentences). If the answer is not in the document, say so plainly. \
+         {lang_line}"
+    );
+    let client = reqwest::Client::new();
+    let body = json!({
+        "model": model,
+        "max_tokens": 500,
+        "system": system,
+        "messages": [{
+            "role": "user",
+            "content": format!("Document:\n\n{text}\n\n---\nQuestion: {question}")
+        }],
+    });
+    let resp = client
+        .post(API_URL)
+        .header("x-api-key", api_key)
+        .header("anthropic-version", "2023-06-01")
+        .header("content-type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("network: {e}"))?;
+
+    let status = resp.status();
+    let data: Value = resp.json().await.map_err(|e| e.to_string())?;
+    if !status.is_success() {
+        let msg = data["error"]["message"].as_str().unwrap_or("API error");
+        return Err(format!("Claude API {status}: {msg}"));
+    }
+    let answer = data["content"]
+        .as_array()
+        .and_then(|a| a.iter().find_map(|b| b["text"].as_str()))
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    Ok(json!({ "answer": answer }))
+}

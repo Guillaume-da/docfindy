@@ -27,7 +27,10 @@
     "hideOutline": "Ocultar esquema",
     "aiSummary": "Resumen IA",
     "summarizing": "leyendo…",
-    "aiNoKey": "Añade una clave API de Claude en Ajustes para obtener resúmenes IA."
+    "aiNoKey": "Añade una clave API de Claude en Ajustes para obtener resúmenes IA.",
+    "open": "Abrir",
+    "reveal": "Mostrar",
+    "ask": "Pregunta sobre este documento…"
   },
   "settings": {
     "title": "Ajustes",

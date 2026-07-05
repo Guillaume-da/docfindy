@@ -110,6 +110,9 @@ export default function PreviewPane({ preview }: { preview: Preview | null }) {
   const [ai, setAi] = useState<AiSummary | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
   const [aiNoKey, setAiNoKey] = useState(false);
+  const [question, setQuestion] = useState("");
+  const [answer, setAnswer] = useState<string | null>(null);
+  const [asking, setAsking] = useState(false);
 
   // Generate an AI summary whenever a summarizable document is shown, or when
   // the UI language changes (so the summary follows the EN/ES toggle).
@@ -119,6 +122,8 @@ export default function PreviewPane({ preview }: { preview: Preview | null }) {
   useEffect(() => {
     setAi(null);
     setAiNoKey(false);
+    setAnswer(null);
+    setQuestion("");
     if (!path || kind === "image" || kind === "other") {
       setAiBusy(false);
       return;
@@ -157,6 +162,27 @@ export default function PreviewPane({ preview }: { preview: Preview | null }) {
     setTimeout(() => setCopied(false), 1500);
   }
 
+  async function ask() {
+    const query = question.trim();
+    if (!query || asking) return;
+    setAsking(true);
+    setAnswer(null);
+    try {
+      const r = await invoke<{ answer: string }>("ask_document", {
+        path: preview!.path,
+        question: query,
+        lang,
+      });
+      setAnswer(r.answer);
+    } catch (e) {
+      setAnswer(
+        String(e).includes("no_api_key") ? t("preview.aiNoKey") : String(e),
+      );
+    } finally {
+      setAsking(false);
+    }
+  }
+
   return (
     <div className="flex h-full flex-col bg-panel/50">
       <div className="border-b border-edge px-4 py-3">
@@ -185,10 +211,16 @@ export default function PreviewPane({ preview }: { preview: Preview | null }) {
               {copied ? t("preview.copied") : t("preview.copyPath")}
             </button>
             <button
-              onClick={() => invoke("open_in_browser", { path: preview.path })}
+              onClick={() => invoke("reveal_in_folder", { path: preview.path })}
+              className="rounded-lg border border-edge bg-panel-2 px-2.5 py-1 transition hover:text-txt"
+            >
+              {t("preview.reveal")}
+            </button>
+            <button
+              onClick={() => invoke("open_file", { path: preview.path })}
               className="rounded-lg bg-gradient-to-r from-accent to-accent-2 px-2.5 py-1 font-semibold text-ink"
             >
-              {t("preview.openBrowser")}
+              {t("preview.open")}
             </button>
           </span>
         </div>
@@ -242,6 +274,34 @@ export default function PreviewPane({ preview }: { preview: Preview | null }) {
       {aiNoKey && (
         <div className="border-b border-edge bg-panel/40 px-4 py-2 text-[11px] text-muted">
           {t("preview.aiNoKey")}
+        </div>
+      )}
+
+      {!aiNoKey && (kind === "text" || kind === "pdf") && (
+        <div className="border-b border-edge px-4 py-2.5">
+          <div className="flex items-center gap-2 rounded-xl border border-edge bg-panel-2 px-2.5 py-1.5 focus-within:border-accent/60">
+            <span className="text-xs text-accent-2">✦</span>
+            <input
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  ask();
+                }
+              }}
+              placeholder={t("preview.ask")}
+              className="flex-1 bg-transparent text-xs outline-none placeholder:text-muted/60"
+            />
+            {asking && (
+              <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-accent-2" />
+            )}
+          </div>
+          {answer && (
+            <div className="mt-2 rounded-xl bg-accent/5 px-3 py-2 text-xs leading-relaxed text-txt/90">
+              {answer}
+            </div>
+          )}
         </div>
       )}
 

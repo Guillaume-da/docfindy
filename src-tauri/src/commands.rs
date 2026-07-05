@@ -139,6 +139,29 @@ pub async fn summarize_file(
     claude::summarize(&api_key, &model, &lang, text).await
 }
 
+/// Answer a question about the previewed document: `{answer}`. Needs the key.
+#[tauri::command]
+pub async fn ask_document(
+    app: tauri::AppHandle,
+    path: String,
+    question: String,
+    lang: Option<String>,
+) -> Result<Value, String> {
+    let api_key = secrets::get(&app).ok_or("no_api_key")?;
+    let settings = load_settings(&app);
+    let lang = lang
+        .filter(|l| !l.trim().is_empty())
+        .unwrap_or_else(|| settings["lang"].as_str().unwrap_or("en").to_string());
+    let model = settings["model"].as_str().unwrap_or("claude-sonnet-5").to_string();
+    let text_args: Vec<String> = vec![
+        "text".into(), "--path".into(), path,
+        "--max-chars".into(), "12000".into(),
+    ];
+    let v = engine::run(&app, &text_args, false).await?;
+    let text = v["text"].as_str().unwrap_or_default();
+    claude::ask(&api_key, &model, &lang, text, &question).await
+}
+
 #[derive(Deserialize)]
 pub struct ChatMsg {
     pub role: String,
@@ -252,6 +275,72 @@ pub fn open_in_browser(path: String) -> Result<(), String> {
         }
         std::process::Command::new("xdg-open")
             .arg(&url)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+}
+
+/// Open the file with the OS default application (Word for .docx, etc.).
+#[tauri::command]
+pub fn open_file(path: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", &path])
+            .creation_flags(0x0800_0000)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&path)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&path)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+}
+
+/// Reveal the file in the OS file manager, selected.
+#[tauri::command]
+pub fn reveal_in_folder(path: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new("explorer")
+            .raw_arg(format!("/select,\"{path}\""))
+            .creation_flags(0x0800_0000)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .args(["-R", &path])
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    {
+        let dir = std::path::Path::new(&path)
+            .parent()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.clone());
+        std::process::Command::new("xdg-open")
+            .arg(dir)
             .spawn()
             .map(|_| ())
             .map_err(|e| e.to_string())

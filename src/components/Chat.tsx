@@ -45,7 +45,16 @@ export default function Chat({
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [activePath, setActivePath] = useState<string | null>(null);
+  const [sel, setSel] = useState(0);
   const seq = useRef(0);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  // keep the keyboard-selected result scrolled into view
+  useEffect(() => {
+    listRef.current
+      ?.querySelector<HTMLElement>(`[data-idx="${sel}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [sel]);
 
   // search-as-you-type: debounced, with stale-response guarding
   useEffect(() => {
@@ -64,6 +73,7 @@ export default function Chat({
         if (id !== seq.current) return; // a newer keystroke already fired
         setHits(res.hits ?? []);
         setNote(res.note ?? null);
+        setSel(0);
       } catch (e) {
         if (id !== seq.current) return;
         setHits([]);
@@ -91,6 +101,18 @@ export default function Chat({
             autoFocus
             value={q}
             onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowDown") {
+                e.preventDefault();
+                setSel((s) => Math.min(s + 1, hits.length - 1));
+              } else if (e.key === "ArrowUp") {
+                e.preventDefault();
+                setSel((s) => Math.max(s - 1, 0));
+              } else if (e.key === "Enter") {
+                e.preventDefault();
+                if (hits[sel]) pick(hits[sel]);
+              }
+            }}
             placeholder={t("chat.placeholder")}
             className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted/60"
           />
@@ -131,14 +153,18 @@ export default function Chat({
           </div>
         )}
 
-        <div className="space-y-1.5">
-          {hits.map((h) => (
+        <div ref={listRef} className="space-y-1.5">
+          {hits.map((h, i) => (
             <button
               key={h.path}
-              onClick={() => pick(h)}
+              data-idx={i}
+              onClick={() => {
+                setSel(i);
+                pick(h);
+              }}
               className={
                 "group flex w-full items-start gap-2 rounded-xl border px-3 py-2 text-left transition " +
-                (activePath === h.path
+                (activePath === h.path || sel === i
                   ? "border-accent/60 bg-accent/10"
                   : "border-edge bg-panel-2 hover:border-accent-2/50")
               }

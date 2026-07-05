@@ -20,9 +20,12 @@ pub fn run() {
             commands::update_index,
             commands::quick_search,
             commands::summarize_file,
+            commands::ask_document,
             commands::chat,
             commands::read_preview,
             commands::open_in_browser,
+            commands::open_file,
+            commands::reveal_in_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
