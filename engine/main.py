@@ -435,6 +435,36 @@ def _extract_text(path: Path, max_chars: int) -> str:
             return "\n".join(paragraphs)[:max_chars]
         except Exception as e:  # noqa: BLE001 — surface any parse error to the agent
             return f"(docx extraction failed: {e})"
+    if suffix == ".odt":
+        try:
+            import zipfile
+            import xml.etree.ElementTree as ET
+            t = "{urn:oasis:names:tc:opendocument:xmlns:text:1.0}"
+
+            def walk(el) -> str:
+                out = []
+                if el.tag == f"{t}tab":
+                    out.append("\t")
+                elif el.tag == f"{t}line-break":
+                    out.append("\n")
+                elif el.tag == f"{t}s":
+                    n = el.get(f"{t}c")
+                    out.append(" " * (int(n) if n and n.isdigit() else 1))
+                if el.text:
+                    out.append(el.text)
+                for child in el:
+                    out.append(walk(child))
+                    if child.tail:
+                        out.append(child.tail)
+                return "".join(out)
+
+            with zipfile.ZipFile(path) as z:
+                root = ET.fromstring(z.read("content.xml"))
+            blocks = [walk(p) for p in root.iter()
+                      if p.tag in (f"{t}p", f"{t}h")]
+            return "\n".join(blocks)[:max_chars]
+        except Exception as e:  # noqa: BLE001 — surface any parse error to the agent
+            return f"(odt extraction failed: {e})"
     if suffix in TEXT_SUFFIXES or not suffix:
         try:
             return path.read_text(encoding="utf-8", errors="replace")[:max_chars]

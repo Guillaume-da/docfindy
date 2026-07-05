@@ -143,7 +143,7 @@ pub async fn read_preview(app: tauri::AppHandle, path: String) -> Result<Value, 
         "pdf"
     } else if IMAGE_EXTS.contains(&ext.as_str()) {
         "image"
-    } else if ext == "docx" || TEXT_EXTS.contains(&ext.as_str()) {
+    } else if ext == "docx" || ext == "odt" || TEXT_EXTS.contains(&ext.as_str()) {
         "text"
     } else {
         "other"
@@ -158,14 +158,14 @@ pub async fn read_preview(app: tauri::AppHandle, path: String) -> Result<Value, 
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|d| d.as_secs()),
     });
-    if ext == "docx" {
+    if ext == "docx" || ext == "odt" {
         let args = vec![
             "text".into(), "--path".into(), path,
             "--max-chars".into(), "200000".into(),
         ];
         match engine::run(&app, &args, false).await {
             Ok(v) => out["text"] = v["text"].clone(),
-            Err(e) => out["text"] = json!(format!("(docx extraction failed: {e})")),
+            Err(e) => out["text"] = json!(format!("({ext} extraction failed: {e})")),
         }
     } else if kind == "text" && meta.len() <= 500_000 {
         if let Ok(text) = fs::read_to_string(&p) {
