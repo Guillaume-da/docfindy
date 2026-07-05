@@ -166,6 +166,10 @@ export default function App() {
         </div>
       </div>
 
+      <footer className="border-t border-edge bg-panel px-5 py-1.5 text-center text-[10px] tracking-wide text-muted/70">
+        Made by G. Dall'Olmo
+      </footer>
+
       {showSettings && settings && (
         <Settings
           settings={settings}
