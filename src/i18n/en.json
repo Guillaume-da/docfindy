@@ -7,7 +7,8 @@
     "empty": "Ask me to find any file on this computer.",
     "examples": "Try: \"find the budget spreadsheet\" · \"the PDF about taxes\" · \"my resume\"",
     "error": "Something went wrong",
-    "noKey": "Add your Claude API key in Settings to start searching."
+    "noKey": "Add your Claude API key in Settings to start searching.",
+    "candidates": "{{count}} matches — click to preview"
   },
   "preview": {
     "title": "Preview",
@@ -18,7 +19,10 @@
     "empty": "Found files appear here.",
     "noPreview": "No inline preview for this file type.",
     "size": "Size",
-    "modified": "Modified"
+    "modified": "Modified",
+    "outline": "Outline",
+    "showOutline": "Show outline",
+    "hideOutline": "Hide outline"
   },
   "settings": {
     "title": "Settings",

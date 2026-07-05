@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useTranslation } from "react-i18next";
@@ -17,6 +17,45 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [indexStatus, setIndexStatus] = useState<IndexStatus | null>(null);
+
+  // width of the preview pane, as a % of the split area, drag-adjustable
+  const splitRef = useRef<HTMLDivElement>(null);
+  const [previewPct, setPreviewPct] = useState(() => {
+    const saved = Number(localStorage.getItem("findy.previewPct"));
+    return saved >= 20 && saved <= 75 ? saved : 42;
+  });
+  const pctRef = useRef(previewPct);
+  const dragging = useRef(false);
+
+  useEffect(() => {
+    function onMove(e: PointerEvent) {
+      if (!dragging.current || !splitRef.current) return;
+      const rect = splitRef.current.getBoundingClientRect();
+      const pct = ((rect.right - e.clientX) / rect.width) * 100;
+      const clamped = Math.min(75, Math.max(20, pct));
+      pctRef.current = clamped;
+      setPreviewPct(clamped);
+    }
+    function onUp() {
+      if (!dragging.current) return;
+      dragging.current = false;
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+      localStorage.setItem("findy.previewPct", String(Math.round(pctRef.current)));
+    }
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+  }, []);
+
+  function startDrag() {
+    dragging.current = true;
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
+  }
 
   const refresh = useCallback(async () => {
     const [s, hasKey, idx] = await Promise.all([
@@ -94,11 +133,18 @@ export default function App() {
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1">
-        <div className="flex min-w-0 flex-1 flex-col border-r border-edge">
+      <div ref={splitRef} className="flex min-h-0 flex-1">
+        <div className="flex min-w-0 flex-1 flex-col">
           <Chat onShowFile={showFile} />
         </div>
-        <div className="w-[42%] min-w-[320px]">
+        <div
+          onPointerDown={startDrag}
+          className="group relative w-1 shrink-0 cursor-col-resize bg-edge transition hover:bg-accent-2"
+          title="Drag to resize"
+        >
+          <div className="absolute inset-y-0 -left-1 -right-1" />
+        </div>
+        <div className="min-w-0 shrink-0" style={{ width: `${previewPct}%` }}>
           <PreviewPane preview={preview} />
         </div>
       </div>

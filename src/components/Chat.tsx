@@ -21,7 +21,15 @@ export default function Chat({
   const [busy, setBusy] = useState(false);
   const [activity, setActivity] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [activePath, setActivePath] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
+
+  function pick(f: ShownFile) {
+    setActivePath(f.path);
+    onShowFile(f.path, f.summary);
+  }
 
   useEffect(() => {
     const un = listen<{ tool: string }>("agent-activity", (e) => {
@@ -47,9 +55,9 @@ export default function Chat({
     setActivity(null);
     try {
       const res = await invoke<ChatResult>("chat", { messages: next });
-      setMessages([...next, { role: "assistant", content: res.text }]);
-      const last = res.shown.filter((s) => s.exists).pop();
-      if (last) onShowFile(last.path, last.summary);
+      const shown = res.shown.filter((s) => s.exists);
+      setMessages([...next, { role: "assistant", content: res.text, shown }]);
+      if (shown.length) pick(shown[0]);
     } catch (e) {
       const msg = String(e);
       setError(msg === "no_api_key" ? t("chat.noKey") : `${t("chat.error")}: ${msg}`);
@@ -81,12 +89,12 @@ export default function Chat({
           </div>
         )}
         {messages.map((m, i) => (
-          <div key={i} className={m.role === "user" ? "flex justify-end" : "flex"}>
+          <div key={i} className={m.role === "user" ? "flex justify-end" : "flex flex-col"}>
             <div
               className={
                 "max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed " +
                 (m.role === "user"
-                  ? "bg-gradient-to-r from-accent/90 to-accent/70 text-white"
+                  ? "self-end bg-gradient-to-r from-accent/90 to-accent/70 text-white"
                   : "border border-edge bg-panel-2")
               }
             >
@@ -98,6 +106,39 @@ export default function Chat({
                 m.content
               )}
             </div>
+            {m.shown && m.shown.length > 0 && (
+              <div className="mt-2 flex max-w-[85%] flex-col gap-1.5">
+                {m.shown.length > 1 && (
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-muted">
+                    {t("chat.candidates", { count: m.shown.length })}
+                  </div>
+                )}
+                {m.shown.map((f) => (
+                  <button
+                    key={f.path}
+                    onClick={() => pick(f)}
+                    className={
+                      "group flex items-start gap-2 rounded-xl border px-3 py-2 text-left transition " +
+                      (activePath === f.path
+                        ? "border-accent/60 bg-accent/10"
+                        : "border-edge bg-panel-2 hover:border-accent-2/50")
+                    }
+                  >
+                    <span className="mt-0.5 shrink-0 text-accent-2">📄</span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-xs font-semibold text-txt">
+                        {baseName(f.path)}
+                      </span>
+                      {f.summary && (
+                        <span className="mt-0.5 block truncate text-[11px] text-muted">
+                          {f.summary}
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         ))}
         {busy && (

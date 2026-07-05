@@ -160,11 +160,14 @@ pub async fn read_preview(app: tauri::AppHandle, path: String) -> Result<Value, 
     });
     if ext == "docx" || ext == "odt" {
         let args = vec![
-            "text".into(), "--path".into(), path,
+            "blocks".into(), "--path".into(), path,
             "--max-chars".into(), "200000".into(),
         ];
         match engine::run(&app, &args, false).await {
-            Ok(v) => out["text"] = v["text"].clone(),
+            Ok(v) => {
+                out["text"] = v["text"].clone();
+                out["blocks"] = v["blocks"].clone();
+            }
             Err(e) => out["text"] = json!(format!("({ext} extraction failed: {e})")),
         }
     } else if kind == "text" && meta.len() <= 500_000 {

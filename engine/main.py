@@ -22,12 +22,30 @@ Subcommands:
 from __future__ import annotations
 
 import argparse
+import difflib
 import json
 import os
 import re
 import sys
 import time
+import unicodedata
 from pathlib import Path
+
+
+# Force UTF-8 on stdout/stderr. When the sidecar's streams are pipes (as under
+# Tauri), Python otherwise encodes with the locale codepage (cp1252 on Windows),
+# which corrupts accented JSON and breaks the Rust UTF-8 reader.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
+
+
+def _fold(s: str) -> str:
+    """Lowercase + strip diacritics — mirrors FTS5 'remove_diacritics 2'."""
+    return "".join(c for c in unicodedata.normalize("NFKD", s.lower())
+                   if not unicodedata.combining(c))
 
 
 # ---------------------------------------------------------------------------
@@ -226,6 +244,123 @@ TEXT_SUFFIXES = {
 }
 
 
+# --- structured extraction: heading-aware blocks for docx / odt -------------
+# Each block is {"level": int, "text": str}; level 0 = body paragraph,
+# 1..6 = heading depth. Consumed by cmd_blocks (preview outline) and, joined,
+# by _extract_text (FTS / search / read_file).
+
+_DOCX_W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+_ODT_T = "{urn:oasis:names:tc:opendocument:xmlns:text:1.0}"
+
+
+def _docx_para_text(para) -> str:
+    parts = []
+    for el in para.iter():
+        if el.tag == f"{_DOCX_W}t" and el.text:
+            parts.append(el.text)
+        elif el.tag == f"{_DOCX_W}tab":
+            parts.append("\t")
+        elif el.tag in (f"{_DOCX_W}br", f"{_DOCX_W}cr"):
+            parts.append("\n")
+    return "".join(parts)
+
+
+def _docx_para_level(para) -> int:
+    pPr = para.find(f"{_DOCX_W}pPr")
+    if pPr is None:
+        return 0
+    style = pPr.find(f"{_DOCX_W}pStyle")
+    if style is not None:
+        val = style.get(f"{_DOCX_W}val", "") or ""
+        m = re.match(r"(?i)(?:heading|titre|title)\s*(\d)", val)
+        if m:
+            return min(int(m.group(1)), 6)
+        if re.fullmatch(r"(?i)title|titre", val):
+            return 1
+    olvl = pPr.find(f"{_DOCX_W}outlineLvl")
+    if olvl is not None:
+        try:
+            return min(int(olvl.get(f"{_DOCX_W}val", "0")) + 1, 6)
+        except ValueError:
+            pass
+    return 0
+
+
+def _docx_blocks(path: Path, max_chars: int) -> list[dict]:
+    import zipfile
+    import xml.etree.ElementTree as ET
+    with zipfile.ZipFile(path) as z:
+        root = ET.fromstring(z.read("word/document.xml"))
+    blocks, total = [], 0
+    for para in root.iter(f"{_DOCX_W}p"):
+        text = _docx_para_text(para)
+        if not text.strip():
+            continue
+        blocks.append({"level": _docx_para_level(para), "text": text})
+        total += len(text)
+        if total > max_chars:
+            break
+    return blocks
+
+
+def _odt_walk(el) -> str:
+    out = []
+    if el.tag == f"{_ODT_T}tab":
+        out.append("\t")
+    elif el.tag == f"{_ODT_T}line-break":
+        out.append("\n")
+    elif el.tag == f"{_ODT_T}s":
+        n = el.get(f"{_ODT_T}c")
+        out.append(" " * (int(n) if n and n.isdigit() else 1))
+    if el.text:
+        out.append(el.text)
+    for child in el:
+        out.append(_odt_walk(child))
+        if child.tail:
+            out.append(child.tail)
+    return "".join(out)
+
+
+def _odt_blocks(path: Path, max_chars: int) -> list[dict]:
+    import zipfile
+    import xml.etree.ElementTree as ET
+    with zipfile.ZipFile(path) as z:
+        root = ET.fromstring(z.read("content.xml"))
+    blocks, total = [], 0
+    for el in root.iter():
+        if el.tag == f"{_ODT_T}h":
+            try:
+                lvl = min(int(el.get(f"{_ODT_T}outline-level", "1") or "1"), 6)
+            except ValueError:
+                lvl = 1
+            text = _odt_walk(el)
+            blocks.append({"level": lvl, "text": text})
+        elif el.tag == f"{_ODT_T}p":
+            text = _odt_walk(el)
+            if not text.strip():
+                continue
+            blocks.append({"level": 0, "text": text})
+        else:
+            continue
+        total += len(blocks[-1]["text"])
+        if total > max_chars:
+            break
+    return blocks
+
+
+def _blocks_of(path: Path, max_chars: int) -> list[dict] | None:
+    """Heading-aware blocks for docx/odt, else None (caller uses flat text)."""
+    suffix = path.suffix.lower()
+    try:
+        if suffix == ".docx":
+            return _docx_blocks(path, max_chars)
+        if suffix == ".odt":
+            return _odt_blocks(path, max_chars)
+    except Exception:  # noqa: BLE001 — fall back to flat text on any parse error
+        return None
+    return None
+
+
 def _extract_text(path: Path, max_chars: int) -> str:
     suffix = path.suffix.lower()
     if suffix == ".pdf":
@@ -248,53 +383,12 @@ def _extract_text(path: Path, max_chars: int) -> str:
             return f"(pdf extraction failed: {e})"
     if suffix == ".docx":
         try:
-            import zipfile
-            import xml.etree.ElementTree as ET
-            w = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
-            with zipfile.ZipFile(path) as z:
-                root = ET.fromstring(z.read("word/document.xml"))
-            paragraphs = []
-            for para in root.iter(f"{w}p"):
-                parts = []
-                for el in para.iter():
-                    if el.tag == f"{w}t" and el.text:
-                        parts.append(el.text)
-                    elif el.tag == f"{w}tab":
-                        parts.append("\t")
-                    elif el.tag in (f"{w}br", f"{w}cr"):
-                        parts.append("\n")
-                paragraphs.append("".join(parts))
-            return "\n".join(paragraphs)[:max_chars]
+            return "\n".join(b["text"] for b in _docx_blocks(path, max_chars))[:max_chars]
         except Exception as e:  # noqa: BLE001 — surface any parse error to the agent
             return f"(docx extraction failed: {e})"
     if suffix == ".odt":
         try:
-            import zipfile
-            import xml.etree.ElementTree as ET
-            t = "{urn:oasis:names:tc:opendocument:xmlns:text:1.0}"
-
-            def walk(el) -> str:
-                out = []
-                if el.tag == f"{t}tab":
-                    out.append("\t")
-                elif el.tag == f"{t}line-break":
-                    out.append("\n")
-                elif el.tag == f"{t}s":
-                    n = el.get(f"{t}c")
-                    out.append(" " * (int(n) if n and n.isdigit() else 1))
-                if el.text:
-                    out.append(el.text)
-                for child in el:
-                    out.append(walk(child))
-                    if child.tail:
-                        out.append(child.tail)
-                return "".join(out)
-
-            with zipfile.ZipFile(path) as z:
-                root = ET.fromstring(z.read("content.xml"))
-            blocks = [walk(p) for p in root.iter()
-                      if p.tag in (f"{t}p", f"{t}h")]
-            return "\n".join(blocks)[:max_chars]
+            return "\n".join(b["text"] for b in _odt_blocks(path, max_chars))[:max_chars]
         except Exception as e:  # noqa: BLE001 — surface any parse error to the agent
             return f"(odt extraction failed: {e})"
     if suffix in TEXT_SUFFIXES or not suffix:
@@ -303,6 +397,19 @@ def _extract_text(path: Path, max_chars: int) -> str:
         except OSError as e:
             return f"(read failed: {e})"
     return f"(no text extraction for {suffix} files)"
+
+
+def cmd_blocks(args: argparse.Namespace) -> None:
+    p = Path(args.path).expanduser()
+    if not p.is_file():
+        _fail(f"not a file: {p}")
+    blocks = _blocks_of(p, args.max_chars)
+    if blocks is None:
+        # not a structured format — hand back flat text, no outline
+        _emit({"path": str(p), "blocks": [], "text": _extract_text(p, args.max_chars)})
+        return
+    _emit({"path": str(p), "blocks": blocks,
+           "text": "\n".join(b["text"] for b in blocks)[:args.max_chars]})
 
 
 def cmd_text(args: argparse.Namespace) -> None:
@@ -331,7 +438,20 @@ def _fts_connect(out_dir: Path):
     db.execute("CREATE VIRTUAL TABLE IF NOT EXISTS docs USING fts5("
                "path UNINDEXED, name, text, "
                "tokenize='unicode61 remove_diacritics 2')")
+    # distinct folded words from file names — the vocabulary for typo-tolerant
+    # (edit-distance) query expansion in cmd_fts.
+    db.execute("CREATE TABLE IF NOT EXISTS name_tokens(token TEXT PRIMARY KEY)")
     return db
+
+
+def _name_words(name: str) -> list[str]:
+    """Folded word tokens of a file name, extension dropped, len >= 3.
+
+    Splits on any non-alphanumeric (underscore included) to mirror FTS5's
+    unicode61 tokenizer, so 'passeport_x.jpg' yields 'passeport', not one blob.
+    """
+    stem = name.rsplit(".", 1)[0] if "." in name else name
+    return [t for t in re.findall(r"[^\W_]+", _fold(stem), re.UNICODE) if len(t) >= 3]
 
 
 def _build_fts(out_dir: Path, files: list[dict]) -> int:
@@ -371,6 +491,14 @@ def _build_fts(out_dir: Path, files: list[dict]) -> int:
     for p in set(old) - now:
         db.execute("DELETE FROM docs WHERE path = ?", (p,))
         db.execute("DELETE FROM meta WHERE path = ?", (p,))
+    # rebuild the name vocabulary wholesale — cheap, and keeps it exact after
+    # additions and deletions alike.
+    vocab: set[str] = set()
+    for f in files:
+        vocab.update(_name_words(f["name"]))
+    db.execute("DELETE FROM name_tokens")
+    db.executemany("INSERT OR IGNORE INTO name_tokens(token) VALUES (?)",
+                   [(t,) for t in vocab])
     db.commit()
     db.close()
     return changed
@@ -386,9 +514,27 @@ def cmd_fts(args: argparse.Namespace) -> None:
              if len(t) >= 2][:12]
     if not terms:
         _fail("empty query")
-    # each term as a quoted prefix phrase — user text can't inject operators
-    match = " OR ".join(f'"{t}"*' for t in terms)
     db = _fts_connect(out_dir)
+
+    # Typo tolerance: for any term that isn't itself a known file-name word,
+    # add the closest name-vocabulary words (edit-distance) as OR alternatives.
+    # Exact/correct queries stay precise (their term is in the vocab -> no
+    # expansion). "raport" -> "rapport", "facure" -> "facture".
+    vocab = [r[0] for r in db.execute("SELECT token FROM name_tokens")]
+    vocab_set = set(vocab)
+    variants: list[str] = []
+    seen_v: set[str] = set()
+    for t in terms:
+        folded = _fold(t)
+        for cand in [folded] + (
+            difflib.get_close_matches(folded, vocab, n=3, cutoff=0.74)
+            if len(folded) >= 4 and folded not in vocab_set else []
+        ):
+            if cand and cand not in seen_v:
+                seen_v.add(cand)
+                variants.append(cand)
+    # each variant as a quoted prefix phrase — user text can't inject operators
+    match = " OR ".join(f'"{v}"*' for v in variants)
     rows = db.execute(
         "SELECT docs.path, docs.name, bm25(docs, 0.0, 5.0, 1.0) AS rank, "
         "snippet(docs, 2, '[', ']', '…', 12), meta.size, meta.mtime "
@@ -396,7 +542,7 @@ def cmd_fts(args: argparse.Namespace) -> None:
         "WHERE docs MATCH ? ORDER BY rank LIMIT ?",
         (match, max(args.limit, 1))).fetchall()
     db.close()
-    _emit({"query": args.query, "terms": terms, "hits": [
+    _emit({"query": args.query, "terms": variants, "hits": [
         {"path": r[0], "name": r[1], "score": round(-r[2], 3),
          "snippet": r[3], "size": r[4], "mtime": r[5]} for r in rows]})
 
@@ -493,6 +639,11 @@ def main() -> None:
     p.add_argument("--path", required=True)
     p.add_argument("--max-chars", type=int, default=60_000)
     p.set_defaults(fn=cmd_text)
+
+    p = sub.add_parser("blocks")
+    p.add_argument("--path", required=True)
+    p.add_argument("--max-chars", type=int, default=200_000)
+    p.set_defaults(fn=cmd_blocks)
 
     p = sub.add_parser("search")
     p.add_argument("--out", required=True)

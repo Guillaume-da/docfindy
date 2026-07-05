@@ -7,7 +7,8 @@
     "empty": "Pídeme encontrar cualquier archivo en este equipo.",
     "examples": "Prueba: \"busca la hoja de presupuesto\" · \"el PDF de impuestos\" · \"mi currículum\"",
     "error": "Algo salió mal",
-    "noKey": "Añade tu clave API de Claude en Ajustes para empezar a buscar."
+    "noKey": "Añade tu clave API de Claude en Ajustes para empezar a buscar.",
+    "candidates": "{{count}} resultados — haz clic para previsualizar"
   },
   "preview": {
     "title": "Vista previa",
@@ -18,7 +19,10 @@
     "empty": "Los archivos encontrados aparecen aquí.",
     "noPreview": "Sin vista previa para este tipo de archivo.",
     "size": "Tamaño",
-    "modified": "Modificado"
+    "modified": "Modificado",
+    "outline": "Esquema",
+    "showOutline": "Mostrar esquema",
+    "hideOutline": "Ocultar esquema"
   },
   "settings": {
     "title": "Ajustes",

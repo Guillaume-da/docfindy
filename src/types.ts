@@ -1,6 +1,7 @@
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
+  shown?: ShownFile[];
 }
 
 export interface ShownFile {
@@ -10,6 +11,11 @@ export interface ShownFile {
   summary?: string | null;
 }
 
+export interface DocBlock {
+  level: number; // 0 = body paragraph, 1..6 = heading depth
+  text: string;
+}
+
 export interface Preview {
   kind: "text" | "image" | "pdf" | "other";
   path: string;
@@ -17,6 +23,7 @@ export interface Preview {
   size: number;
   mtime?: number;
   text?: string;
+  blocks?: DocBlock[];
   summary?: string | null;
 }
 

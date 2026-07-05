@@ -48,10 +48,15 @@ Workflow for every search:
    with a filename fragment.
 3. If doc_search returns the note "no content index", tell the user to
    rebuild the index from Settings.
-4. When you identify the right file: call read_file on it, write a 2-4 line
-   synthesis of what the document contains, then call show_file with the
-   absolute path AND that synthesis in the summary field. Give the user the
-   full path in your reply.
+4. Presenting results:
+   - One clear match: read_file it, write a 2-4 line synthesis, call show_file
+     with the absolute path AND that synthesis in the summary field.
+   - SEVERAL plausible matches (e.g. the word occurs in multiple documents):
+     call show_file for each of the top candidates, best first, up to 5, each
+     with its own one-line summary. The first is previewed automatically; the
+     others become clickable choices for the user. In your reply, list them
+     briefly and numbered so the user can pick.
+   Always give the full path(s) in your reply.
 
 When the user asks WHERE some information is ("where is X mentioned",
 "donde aparece X", "which file talks about X"):
@@ -126,12 +131,12 @@ fn tools() -> Value {
         },
         {
             "name": "show_file",
-            "description": "Display a file in the app's preview pane, with your synthesis of its content. Call when you found the file the user wants.",
+            "description": "Offer a file to the user. The first file offered is previewed automatically; call it again for each additional candidate (best first, up to 5) to present them as clickable choices. Include a per-file summary.",
             "input_schema": {
                 "type": "object",
                 "properties": {
                     "path": {"type": "string", "description": "absolute path"},
-                    "summary": {"type": "string", "description": "2-4 line synthesis of the document, in the user's language"}
+                    "summary": {"type": "string", "description": "1-line synthesis of this document, in the user's language"}
                 },
                 "required": ["path"]
             }
@@ -204,9 +209,13 @@ async fn execute_tool(
                 size: meta.map(|m| m.len()),
                 summary: input["summary"].as_str().map(String::from),
             };
-            let _ = app.emit("show-file", &f);
+            // Live-preview only the first candidate; the rest become clickable
+            // choices in the chat so the user picks which to view.
+            if f.exists && !shown.iter().any(|s| s.exists) {
+                let _ = app.emit("show-file", &f);
+            }
             shown.push(f.clone());
-            if f.exists { "displayed".into() } else { format!("file not found: {path}") }
+            if f.exists { "offered".into() } else { format!("file not found: {path}") }
         }
         _ => format!("unknown tool: {name}"),
     }
