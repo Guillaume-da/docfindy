@@ -50,10 +50,21 @@ def _norm_id(path_like: str) -> str:
 
 CATEGORIES = ("code", "document", "paper", "image", "video")
 
+# Windows system dirs — never useful in a personal file index, and huge.
+# Dev noise (node_modules, .git, venvs, caches, dist/build/target) is already
+# skipped by graphify's built-in _SKIP_DIRS during the walk. gitignore-style
+# patterns, matched at any depth, so they apply both to a C:\ root and to
+# AppData nested under a C:\Users\<name> root.
+SYSTEM_EXCLUDES = [
+    "Windows/", "Program Files/", "Program Files (x86)/", "ProgramData/",
+    "AppData/", "$RECYCLE.BIN/", "System Volume Information/",
+    "Recovery/", "PerfLogs/", "OneDriveTemp/",
+]
+
 
 def _detect_root(root: Path) -> dict:
     from graphify.detect import detect
-    return detect(root)
+    return detect(root, extra_excludes=SYSTEM_EXCLUDES)
 
 
 # ---------------------------------------------------------------------------
