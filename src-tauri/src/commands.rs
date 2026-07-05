@@ -131,7 +131,7 @@ const TEXT_EXTS: &[&str] = &[
 const IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico"];
 
 #[tauri::command]
-pub fn read_preview(path: String) -> Result<Value, String> {
+pub async fn read_preview(app: tauri::AppHandle, path: String) -> Result<Value, String> {
     let p = PathBuf::from(&path);
     let meta = fs::metadata(&p).map_err(|e| format!("not found: {e}"))?;
     let ext = p
@@ -143,7 +143,7 @@ pub fn read_preview(path: String) -> Result<Value, String> {
         "pdf"
     } else if IMAGE_EXTS.contains(&ext.as_str()) {
         "image"
-    } else if TEXT_EXTS.contains(&ext.as_str()) {
+    } else if ext == "docx" || TEXT_EXTS.contains(&ext.as_str()) {
         "text"
     } else {
         "other"
@@ -151,14 +151,23 @@ pub fn read_preview(path: String) -> Result<Value, String> {
 
     let mut out = json!({
         "kind": kind,
-        "path": path,
+        "path": path.clone(),
         "name": p.file_name().map(|n| n.to_string_lossy().into_owned()),
         "size": meta.len(),
         "mtime": meta.modified().ok()
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|d| d.as_secs()),
     });
-    if kind == "text" && meta.len() <= 500_000 {
+    if ext == "docx" {
+        let args = vec![
+            "text".into(), "--path".into(), path,
+            "--max-chars".into(), "200000".into(),
+        ];
+        match engine::run(&app, &args, false).await {
+            Ok(v) => out["text"] = v["text"].clone(),
+            Err(e) => out["text"] = json!(format!("(docx extraction failed: {e})")),
+        }
+    } else if kind == "text" && meta.len() <= 500_000 {
         if let Ok(text) = fs::read_to_string(&p) {
             out["text"] = json!(text.chars().take(200_000).collect::<String>());
         }

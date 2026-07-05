@@ -414,6 +414,27 @@ def _extract_text(path: Path, max_chars: int) -> str:
             return "\n".join(parts)[:max_chars]
         except Exception as e:  # noqa: BLE001 — surface any parse error to the agent
             return f"(pdf extraction failed: {e})"
+    if suffix == ".docx":
+        try:
+            import zipfile
+            import xml.etree.ElementTree as ET
+            w = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+            with zipfile.ZipFile(path) as z:
+                root = ET.fromstring(z.read("word/document.xml"))
+            paragraphs = []
+            for para in root.iter(f"{w}p"):
+                parts = []
+                for el in para.iter():
+                    if el.tag == f"{w}t" and el.text:
+                        parts.append(el.text)
+                    elif el.tag == f"{w}tab":
+                        parts.append("\t")
+                    elif el.tag in (f"{w}br", f"{w}cr"):
+                        parts.append("\n")
+                paragraphs.append("".join(parts))
+            return "\n".join(paragraphs)[:max_chars]
+        except Exception as e:  # noqa: BLE001 — surface any parse error to the agent
+            return f"(docx extraction failed: {e})"
     if suffix in TEXT_SUFFIXES or not suffix:
         try:
             return path.read_text(encoding="utf-8", errors="replace")[:max_chars]
