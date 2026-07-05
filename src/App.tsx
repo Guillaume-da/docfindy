@@ -9,6 +9,21 @@ import Onboarding from "./components/Onboarding";
 import LangToggle from "./components/LangToggle";
 import type { AppSettings, IndexStatus, Preview, ShownFile } from "./types";
 
+function errorPreview(
+  path: string,
+  err: unknown,
+  summary?: string | null,
+): Preview {
+  return {
+    kind: "text",
+    path,
+    name: path.split(/[\\/]/).pop() || path,
+    size: 0,
+    text: `Preview unavailable: ${String(err)}`,
+    summary,
+  };
+}
+
 export default function App() {
   const { i18n } = useTranslation();
   const [ready, setReady] = useState(false);
@@ -80,8 +95,8 @@ export default function App() {
       try {
         const p = await invoke<Preview>("read_preview", { path: e.payload.path });
         setPreview({ ...p, summary: e.payload.summary });
-      } catch {
-        /* file vanished between show and read */
+      } catch (err) {
+        setPreview(errorPreview(e.payload.path, err, e.payload.summary));
       }
     });
     return () => {
@@ -93,8 +108,8 @@ export default function App() {
     try {
       const p = await invoke<Preview>("read_preview", { path });
       setPreview({ ...p, summary });
-    } catch {
-      /* ignore */
+    } catch (err) {
+      setPreview(errorPreview(path, err, summary));
     }
   }, []);
 

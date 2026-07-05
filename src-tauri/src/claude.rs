@@ -232,6 +232,7 @@ pub async fn agent_loop(
     let client = reqwest::Client::new();
     let system = system_prompt(lang, roots);
     let mut shown: Vec<ShownFile> = vec![];
+    let mut last_read: Option<String> = None;
     let mut final_text = String::new();
 
     for _ in 0..MAX_TURNS {
@@ -275,6 +276,11 @@ pub async fn agent_loop(
                 Some("tool_use") => {
                     let name = block["name"].as_str().unwrap_or_default();
                     let id = block["id"].as_str().unwrap_or_default();
+                    if name == "read_file" {
+                        if let Some(p) = block["input"]["path"].as_str() {
+                            last_read = Some(p.to_string());
+                        }
+                    }
                     let result = execute_tool(app, name, &block["input"], &mut shown).await;
                     tool_results.push(json!({
                         "type": "tool_result",
@@ -295,6 +301,24 @@ pub async fn agent_loop(
             continue;
         }
         break;
+    }
+
+    // Safety net: if the agent found and read a file but never called show_file
+    // (or every show_file target was missing), preview the last file it read so
+    // the user always gets the document on the right, not a blank pane.
+    if !shown.iter().any(|s| s.exists) {
+        if let Some(path) = last_read {
+            if let Ok(m) = std::fs::metadata(&path) {
+                let f = ShownFile {
+                    path,
+                    exists: true,
+                    size: Some(m.len()),
+                    summary: None,
+                };
+                let _ = app.emit("show-file", &f);
+                shown.push(f);
+            }
+        }
     }
 
     Ok(AgentResult { text: final_text, shown })
