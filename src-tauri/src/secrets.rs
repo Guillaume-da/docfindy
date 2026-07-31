@@ -32,6 +32,19 @@ pub fn set(app: &tauri::AppHandle, key: &str) -> Result<(), String> {
         use std::os::unix::fs::PermissionsExt;
         let _ = fs::set_permissions(&p, fs::Permissions::from_mode(0o600));
     }
+    #[cfg(windows)]
+    {
+        // No mode bits here: the file inherits the config dir's ACL, which is
+        // per-user under %APPDATA% but is not an equivalent of 0600. Mark it
+        // hidden so it is at least not stumbled upon; the keychain is the
+        // primary store and this path is only reached when it fails.
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_ATTRIBUTE_HIDDEN: u32 = 0x2;
+        let _ = fs::OpenOptions::new()
+            .write(true)
+            .attributes(FILE_ATTRIBUTE_HIDDEN)
+            .open(&p);
+    }
     Ok(())
 }
 

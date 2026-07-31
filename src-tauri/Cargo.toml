@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "DocFindy — AI file-finding agent"
 authors = ["Guillaume"]
 edition = "2021"
+license = "MIT"
 
 [lib]
 name = "docfindy_lib"

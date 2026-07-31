@@ -293,7 +293,8 @@ pub async fn read_preview(app: tauri::AppHandle, path: String) -> Result<Value, 
 
 /// Open the file in the default web browser (not the default file handler).
 #[tauri::command]
-pub fn open_in_browser(path: String) -> Result<(), String> {
+pub fn open_in_browser(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    let _ = &app;
     let url = format!(
         "file:///{}",
         path.trim_start_matches('/').replace('\\', "/")
@@ -301,17 +302,11 @@ pub fn open_in_browser(path: String) -> Result<(), String> {
 
     #[cfg(target_os = "windows")]
     {
-        // msedge ships on every Windows 10/11; try user browsers first
-        for browser in ["chrome", "msedge", "firefox"] {
-            if std::process::Command::new("cmd")
-                .args(["/C", "start", "", browser, &url])
-                .spawn()
-                .is_ok()
-            {
-                return Ok(());
-            }
-        }
-        return Err("no browser found".into());
+        // Through the opener plugin, not `cmd /C start`: cmd.exe re-parses its
+        // command line by rules Rust does not escape for, so a crafted filename
+        // could break out of the argument and run as a command.
+        use tauri_plugin_opener::OpenerExt;
+        return app.opener().open_url(url, None::<&str>).map_err(|e| e.to_string());
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -330,24 +325,19 @@ pub fn open_in_browser(path: String) -> Result<(), String> {
 }
 
 /// Open the file with the OS default application (Word for .docx, etc.).
+///
+/// Goes through the opener plugin rather than `cmd /C start`: cmd.exe parses
+/// its command line by different rules than the ones Rust escapes for, so a
+/// filename containing `&`, `^` or a quote — trivially arrived at through a
+/// download — could break out and run as a command.
 #[tauri::command]
-pub fn open_file(path: String) -> Result<(), String> {
-    #[cfg(target_os = "windows")]
+pub fn open_file(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    let _ = &app;
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
     {
-        use std::os::windows::process::CommandExt;
-        std::process::Command::new("cmd")
-            .args(["/C", "start", "", &path])
-            .creation_flags(0x0800_0000)
-            .spawn()
-            .map(|_| ())
-            .map_err(|e| e.to_string())
-    }
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open")
-            .arg(&path)
-            .spawn()
-            .map(|_| ())
+        use tauri_plugin_opener::OpenerExt;
+        app.opener()
+            .open_path(path, None::<&str>)
             .map_err(|e| e.to_string())
     }
     #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
