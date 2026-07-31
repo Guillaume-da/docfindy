@@ -353,18 +353,25 @@ pub fn open_file(app: tauri::AppHandle, path: String) -> Result<(), String> {
 /// Copy the file itself (not its path) to the OS clipboard, so it can be
 /// pasted in the file manager. Unsupported platforms return an error and the
 /// UI falls back to copying the path as text.
+///
+/// Both platforms drive an interpreter (PowerShell, AppleScript) whose quoting
+/// rules are its own, so the path travels in an environment variable and the
+/// command line stays a constant. Escaping the path into the script would work
+/// until it did not; keeping it out of the script means there is nothing to
+/// escape.
 #[tauri::command]
 pub fn copy_file_to_clipboard(path: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
-        let escaped = path.replace('\'', "''");
         let status = std::process::Command::new("powershell")
             .args([
                 "-NoProfile",
+                "-NonInteractive",
                 "-Command",
-                &format!("Set-Clipboard -LiteralPath '{escaped}'"),
+                "Set-Clipboard -LiteralPath $env:DOCFINDY_CLIP_PATH",
             ])
+            .env("DOCFINDY_CLIP_PATH", &path)
             .creation_flags(0x0800_0000)
             .status()
             .map_err(|e| e.to_string())?;
@@ -376,10 +383,12 @@ pub fn copy_file_to_clipboard(path: String) -> Result<(), String> {
     }
     #[cfg(target_os = "macos")]
     {
-        let escaped = path.replace('\\', "\\\\").replace('"', "\\\"");
-        let script = format!("set the clipboard to (POSIX file \"{escaped}\")");
         let status = std::process::Command::new("osascript")
-            .args(["-e", &script])
+            .args([
+                "-e",
+                "set the clipboard to (POSIX file (system attribute \"DOCFINDY_CLIP_PATH\"))",
+            ])
+            .env("DOCFINDY_CLIP_PATH", &path)
             .status()
             .map_err(|e| e.to_string())?;
         if status.success() {
@@ -395,12 +404,26 @@ pub fn copy_file_to_clipboard(path: String) -> Result<(), String> {
     }
 }
 
+/// Whether a path is safe to embed in an `explorer /select,"…"` raw argument.
+///
+/// `raw_arg` bypasses Rust's quoting entirely, so the quoting is ours to get
+/// right. A double quote or a control character would break out of the
+/// argument — and neither is legal in a Windows filename, so rejecting is
+/// correct rather than merely cautious.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn safe_for_explorer_arg(path: &str) -> bool {
+    !path.contains('"') && !path.chars().any(|c| c.is_control())
+}
+
 /// Reveal the file in the OS file manager, selected.
 #[tauri::command]
 pub fn reveal_in_folder(path: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
+        if !safe_for_explorer_arg(&path) {
+            return Err("invalid path".into());
+        }
         std::process::Command::new("explorer")
             .raw_arg(format!("/select,\"{path}\""))
             .creation_flags(0x0800_0000)
@@ -432,8 +455,23 @@ pub fn reveal_in_folder(path: String) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::merge_settings;
+    use super::{merge_settings, safe_for_explorer_arg};
     use serde_json::json;
+
+    #[test]
+    fn ordinary_windows_paths_are_accepted() {
+        assert!(safe_for_explorer_arg("C:\\Users\\Sample\\Documents\\report.pdf"));
+        assert!(safe_for_explorer_arg("C:\\Users\\Sample\\a & b (1).docx"));
+        assert!(safe_for_explorer_arg("C:\\Users\\Sample\\résumé — final.odt"));
+    }
+
+    #[test]
+    fn quotes_and_control_characters_are_rejected() {
+        // Would close the /select,"…" argument early.
+        assert!(!safe_for_explorer_arg("C:\\tmp\\a\".exe"));
+        assert!(!safe_for_explorer_arg("C:\\tmp\\a\nb.txt"));
+        assert!(!safe_for_explorer_arg("C:\\tmp\\a\0b.txt"));
+    }
 
     #[test]
     fn keeps_keys_the_caller_left_out() {
