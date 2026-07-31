@@ -121,6 +121,38 @@ The app was renamed from Findy to DocFindy. That changed the bundle identifier, 
 
 `src-tauri/src/migrate.rs` runs at startup and moves all three from the old `com.guillaume.findy` names. It merges entry by entry rather than moving whole directories, because the webview creates its own caches under the new identifier before the migration runs. It is a no-op on fresh installs and after the first successful run, and if a move fails the old data is left in place rather than half-copied.
 
+## Security
+
+DocFindy reads your documents and can hand their text to an AI, so a few things
+are worth stating plainly.
+
+**Where your data goes.** Indexing, search, preview and open are entirely local
+— nothing leaves the machine. The AI features (summary, document Q&A, smart
+search) send the relevant document text to the Anthropic API, and only when you
+invoke them. Without an API key the app still works; those panels are hidden.
+
+**What is never indexed.** Credential-shaped files — `.env*`, SSH keys,
+`.pem`, `.key`, `.kdbx`, `.pfx`, `.p12`, `.ppk` — are skipped, as are system
+directories and dev noise (`node_modules`, `__pycache__`, dot-directories).
+
+**Agent confinement.** The agent picks what to read partly from document text it
+was just given, which makes a hostile document a prompt-injection vector. Its
+file tools therefore resolve every path against your indexed roots *after*
+canonicalisation, so `..` and symlinks cannot escape, and refuse
+credential-shaped names on read as well as at indexing time. The system prompt
+states that file contents are data, never instructions.
+
+**Where the API key lives.** OS keychain first (Windows Credential Manager,
+macOS Keychain, Secret Service). The file fallback is only used when that
+fails: `0600` on Unix; on Windows it inherits the config directory ACL, which
+is per-user but not an equivalent — treat that path as the weaker one.
+
+**Dependency advisories** are checked in CI (`.github/workflows/audit.yml`) by
+`npm audit` and `cargo audit`, weekly and on every push.
+
+Found something? Open an issue — or, for anything exploitable, please report it
+privately through GitHub Security Advisories rather than in a public issue.
+
 ## Windows installer build
 
 `.github/workflows/build-windows.yml` builds, on a `v*` tag or manual dispatch:

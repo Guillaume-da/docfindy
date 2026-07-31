@@ -1,0 +1,34 @@
+name: audit
+
+# Dependency advisories, on push and weekly. The schedule matters more than the
+# push trigger: an advisory is usually published long after the code that pulled
+# the dependency in.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  npm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npm audit --audit-level=moderate
+
+  cargo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@cargo-audit
+      # Warnings are informational here: the unmaintained crates are GTK3
+      # bindings pulled in by Tauri itself, which this project cannot drop.
+      # Fail on actual vulnerabilities only.
+      - run: cargo audit --file src-tauri/Cargo.lock
