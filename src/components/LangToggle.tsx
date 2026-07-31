@@ -14,7 +14,11 @@ export default function LangToggle({
 
   async function setLang(next: "en" | "es") {
     i18n.changeLanguage(next);
-    const s = { ...(settings || { roots: [], model: "claude-sonnet-5" }), lang: next } as AppSettings;
+    // Never invent the rest of the settings here: a literal fallback would
+    // write roots: [] over a configured index. When the caller has no
+    // settings to hand, read what is on disk before touching one field.
+    const base = settings ?? (await invoke<AppSettings>("get_settings"));
+    const s = { ...base, lang: next } as AppSettings;
     await invoke("save_settings", { settings: s });
     onChanged(s);
   }

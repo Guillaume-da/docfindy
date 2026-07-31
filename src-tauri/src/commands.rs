@@ -28,7 +28,23 @@ pub fn get_settings(app: tauri::AppHandle) -> Value {
 #[tauri::command]
 pub fn save_settings(app: tauri::AppHandle, settings: Value) -> Result<(), String> {
     let p = settings_path(&app)?;
-    fs::write(p, serde_json::to_string_pretty(&settings).unwrap()).map_err(|e| e.to_string())
+    // Merge rather than replace: a caller that sends a partial object should
+    // not silently drop the keys it left out.
+    let merged = merge_settings(load_settings(&app), settings);
+    fs::write(p, serde_json::to_string_pretty(&merged).unwrap()).map_err(|e| e.to_string())
+}
+
+/// Shallow merge of `incoming` over `current`. Keys present in `incoming` win,
+/// including when their value is empty — an explicit `"roots": []` is a real
+/// edit. Keys absent from `incoming` are kept.
+fn merge_settings(current: Value, incoming: Value) -> Value {
+    match (current, incoming) {
+        (Value::Object(mut base), Value::Object(patch)) => {
+            base.extend(patch);
+            Value::Object(base)
+        }
+        (_, incoming) => incoming,
+    }
 }
 
 #[tauri::command]
@@ -373,5 +389,33 @@ pub fn reveal_in_folder(path: String) -> Result<(), String> {
             .spawn()
             .map(|_| ())
             .map_err(|e| e.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::merge_settings;
+    use serde_json::json;
+
+    #[test]
+    fn keeps_keys_the_caller_left_out() {
+        let current = json!({"lang": "es", "model": "claude-sonnet-5", "roots": ["/docs"]});
+        let merged = merge_settings(current, json!({"lang": "en"}));
+        assert_eq!(merged["roots"], json!(["/docs"]));
+        assert_eq!(merged["model"], "claude-sonnet-5");
+        assert_eq!(merged["lang"], "en");
+    }
+
+    #[test]
+    fn an_explicit_empty_value_is_a_real_edit() {
+        let current = json!({"lang": "en", "roots": ["/docs"]});
+        let merged = merge_settings(current, json!({"roots": []}));
+        assert_eq!(merged["roots"], json!([]));
+    }
+
+    #[test]
+    fn falls_back_to_the_incoming_value_when_current_is_not_an_object() {
+        let merged = merge_settings(json!(null), json!({"lang": "en"}));
+        assert_eq!(merged["lang"], "en");
     }
 }

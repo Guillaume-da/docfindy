@@ -4,8 +4,15 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
 import IndexProgress from "./IndexProgress";
 import LangToggle from "./LangToggle";
+import type { AppSettings } from "../types";
 
-export default function Onboarding({ onDone }: { onDone: () => void }) {
+export default function Onboarding({
+  settings,
+  onDone,
+}: {
+  settings: AppSettings | null;
+  onDone: () => void;
+}) {
   const { t } = useTranslation();
   const [apiKey, setApiKey] = useState("");
   const [roots, setRoots] = useState<string[]>([]);
@@ -51,7 +58,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
               {t("onboarding.welcome")}
             </h1>
           </div>
-          <LangToggle settings={null} onChanged={() => {}} />
+          <LangToggle settings={settings} onChanged={() => {}} />
         </div>
         <p className="mb-6 text-sm text-muted">{t("onboarding.intro")}</p>
 

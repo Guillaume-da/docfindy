@@ -122,7 +122,7 @@ export default function App() {
   if (!ready) return null;
 
   if (needsOnboarding) {
-    return <Onboarding onDone={refresh} />;
+    return <Onboarding settings={settings} onDone={refresh} />;
   }
 
   return (
