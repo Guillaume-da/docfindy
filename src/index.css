@@ -1,46 +1,284 @@
 @import "tailwindcss";
 
+/* ------------------------------------------------------------------ *
+ * Theme tokens. Defaults below are the DARK palette (Apple-inspired,
+ * "liquid glass"). The .light class on <html> overrides them, so every
+ * Tailwind utility (bg-surface, text-muted, …) re-themes at runtime.
+ * ------------------------------------------------------------------ */
 @theme {
-  --color-ink: #0b0e14;
-  --color-panel: #12161f;
-  --color-panel-2: #1a1f2b;
-  --color-edge: #262c3a;
-  --color-accent: #7c6cf6;
-  --color-accent-2: #22d3ee;
-  --color-txt: #e6e9f0;
-  --color-muted: #8a93a6;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", ui-sans-serif,
+    system-ui, Roboto, sans-serif;
+
+  --color-accent: #0a84ff;
+  --color-accent-2: #5e5ce6;
+
+  --color-ink: #1c1e24;
+  --color-surface: rgba(28, 30, 36, 0.75);
+  --color-titlebar: rgba(40, 42, 48, 0.7);
+  --color-panel: rgba(255, 255, 255, 0.045);
+  --color-panel-2: rgba(255, 255, 255, 0.05);
+  --color-edge: rgba(255, 255, 255, 0.09);
+  --color-edge-soft: rgba(255, 255, 255, 0.07);
+  --color-fill: rgba(255, 255, 255, 0.06);
+  --color-fill-2: rgba(255, 255, 255, 0.08);
+  --color-fill-hover: rgba(255, 255, 255, 0.14);
+  --color-pill: rgba(255, 255, 255, 0.08);
+  --color-row-selected: rgba(10, 132, 255, 0.2);
+
+  --color-txt: oklch(0.95 0.005 260);
+  --color-txt-strong: oklch(0.98 0.005 260);
+  --color-txt-mid: oklch(0.88 0.008 260);
+  --color-muted: oklch(0.72 0.01 260);
+  --color-muted-2: oklch(0.62 0.01 260);
+  --color-label: oklch(0.6 0.01 260);
 }
 
+html.light {
+  --color-ink: #eef0f5;
+  --color-surface: rgba(255, 255, 255, 0.78);
+  --color-titlebar: rgba(250, 250, 252, 0.7);
+  --color-panel: rgba(255, 255, 255, 0.5);
+  --color-panel-2: rgba(255, 255, 255, 0.62);
+  --color-edge: rgba(0, 0, 0, 0.08);
+  --color-edge-soft: rgba(0, 0, 0, 0.07);
+  --color-fill: rgba(0, 0, 0, 0.045);
+  --color-fill-2: rgba(0, 0, 0, 0.05);
+  --color-fill-hover: rgba(0, 0, 0, 0.09);
+  --color-pill: rgba(0, 0, 0, 0.05);
+  --color-row-selected: rgba(10, 132, 255, 0.12);
+
+  --color-txt: oklch(0.22 0.01 260);
+  --color-txt-strong: oklch(0.18 0.01 260);
+  --color-txt-mid: oklch(0.25 0.01 260);
+  --color-muted: oklch(0.5 0.01 260);
+  --color-muted-2: oklch(0.55 0.01 260);
+  --color-label: oklch(0.58 0.01 260);
+}
+
+/* Syntax-highlighting token colors (CodeView). Dark defaults, light below. */
+html {
+  --code-kw: #6cb2ff;
+  --code-str: #30d158;
+  --code-num: #ff9f0a;
+}
+html.light {
+  --code-kw: #0a5fd9;
+  --code-str: #1f8a3b;
+  --code-num: #c25200;
+}
+.tok-k {
+  color: var(--code-kw);
+  font-weight: 600;
+}
+.tok-s {
+  color: var(--code-str);
+}
+.tok-n {
+  color: var(--code-num);
+}
+.tok-c {
+  color: var(--color-muted-2);
+  font-style: italic;
+}
+
+/* Faithful docx rendering (PreviewPane) — sanitized HTML from the engine.
+   Whitelisted tags only; styled to read like the real document. */
+.docx-rich {
+  color: var(--color-txt-mid);
+  font-size: 14px;
+  line-height: 1.75;
+  word-break: break-word;
+}
+.docx-rich h1,
+.docx-rich h2,
+.docx-rich h3,
+.docx-rich h4,
+.docx-rich h5,
+.docx-rich h6 {
+  color: var(--color-txt-strong);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  margin: 1.1em 0 0.4em;
+}
+.docx-rich :is(h1, h2, h3, h4, h5, h6):first-child {
+  margin-top: 0;
+}
+.docx-rich h1 {
+  font-size: 1.7em;
+}
+.docx-rich h2 {
+  font-size: 1.35em;
+}
+.docx-rich h3 {
+  font-size: 1.15em;
+}
+.docx-rich h4,
+.docx-rich h5,
+.docx-rich h6 {
+  font-size: 1em;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-muted);
+}
+.docx-rich p {
+  margin: 0 0 0.75em;
+}
+.docx-rich p.docx-sp {
+  margin: 0;
+  min-height: 0.9em;
+}
+.docx-rich strong {
+  font-weight: 700;
+  color: var(--color-txt-strong);
+}
+.docx-rich a,
+.docx-rich .docx-link {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.docx-rich .docx-tab {
+  display: inline-block;
+  width: 2.5em;
+}
+.docx-rich .docx-list {
+  margin: 0 0 0.75em;
+  padding-left: 1.4em;
+  list-style: disc;
+}
+.docx-rich .docx-list li {
+  margin: 0.15em 0;
+}
+.docx-rich .docx-list li::marker {
+  color: var(--color-accent);
+}
+.docx-rich .docx-img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  margin: 0.5em 0;
+}
+.docx-rich .docx-table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.75em 0;
+  font-size: 0.95em;
+}
+.docx-rich .docx-table td {
+  border: 1px solid var(--color-edge);
+  padding: 6px 10px;
+  vertical-align: top;
+}
+.docx-rich .docx-table td > p:last-child {
+  margin-bottom: 0;
+}
+.docx-rich .docx-table tr:first-child td {
+  background: var(--color-fill);
+  font-weight: 600;
+  color: var(--color-txt);
+}
+
+/* Desktop gradient sits behind the translucent app surface. */
 html,
 body,
 #root {
   height: 100%;
   margin: 0;
-  background: var(--color-ink);
+}
+
+body {
   color: var(--color-txt);
-  font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--font-sans);
+  background: linear-gradient(
+    150deg,
+    oklch(0.24 0.02 265) 0%,
+    oklch(0.19 0.02 285) 50%,
+    oklch(0.21 0.025 315) 100%
+  );
+  background-attachment: fixed;
+}
+
+html.light body {
+  background: linear-gradient(
+    150deg,
+    oklch(0.93 0.02 255) 0%,
+    oklch(0.9 0.03 285) 50%,
+    oklch(0.92 0.025 320) 100%
+  );
 }
 
 ::selection {
-  background: color-mix(in srgb, var(--color-accent) 40%, transparent);
+  background: color-mix(in srgb, var(--color-accent) 28%, transparent);
 }
 
-/* thin dark scrollbars */
+/* thin themed scrollbars */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #333a4a transparent;
+  scrollbar-color: color-mix(in srgb, var(--color-txt) 22%, transparent)
+    transparent;
+}
+
+@keyframes float-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.float-in {
+  animation: float-in 0.5s ease both;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.fade-in {
+  animation: fade-in 0.25s ease both;
+}
+
+@keyframes halo-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 0.8;
+  }
+}
+.halo-pulse {
+  animation: halo-pulse 3.5s ease-in-out infinite;
 }
 
 @keyframes pulse-dot {
-  0%, 100% { opacity: 0.25; }
-  50% { opacity: 1; }
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 .thinking-dot {
   animation: pulse-dot 1.2s ease-in-out infinite;
 }
-.thinking-dot:nth-child(2) { animation-delay: 0.2s; }
-.thinking-dot:nth-child(3) { animation-delay: 0.4s; }
+.thinking-dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.thinking-dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
 
 .glow {
-  box-shadow: 0 0 24px color-mix(in srgb, var(--color-accent) 25%, transparent);
+  box-shadow: 0 4px 12px -3px color-mix(in srgb, var(--color-accent) 50%, transparent);
 }

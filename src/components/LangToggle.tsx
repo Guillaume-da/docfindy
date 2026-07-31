@@ -24,16 +24,16 @@ export default function LangToggle({
   }
 
   return (
-    <div className="flex overflow-hidden rounded-lg border border-edge text-xs font-semibold">
+    <div className="flex gap-0.5 rounded-[9px] bg-fill-2 p-0.5">
       {(["en", "es"] as const).map((l) => (
         <button
           key={l}
           onClick={() => setLang(l)}
           className={
-            "px-3 py-1.5 uppercase transition " +
+            "rounded-[7px] px-3 py-[5px] text-xs font-semibold uppercase tracking-tight transition " +
             (lang === l
-              ? "bg-gradient-to-r from-accent to-accent-2 text-ink"
-              : "bg-panel-2 text-muted hover:text-txt")
+              ? "bg-fill-hover text-accent shadow-[0_1px_3px_rgba(0,0,0,0.15)]"
+              : "text-muted hover:text-txt")
           }
         >
           {l}

@@ -32,6 +32,7 @@ pub fn run() {
             commands::open_in_browser,
             commands::open_file,
             commands::reveal_in_folder,
+            commands::copy_file_to_clipboard,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

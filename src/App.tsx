@@ -7,6 +7,8 @@ import PreviewPane from "./components/PreviewPane";
 import Settings from "./components/Settings";
 import Onboarding from "./components/Onboarding";
 import LangToggle from "./components/LangToggle";
+import ThemeToggle from "./components/ThemeToggle";
+import { SearchGlyph } from "./components/icons";
 import type { AppSettings, IndexStatus, Preview, ShownFile } from "./types";
 
 function errorPreview(
@@ -126,30 +128,41 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <header className="flex items-center gap-3 border-b border-edge bg-panel px-5 py-3">
-        <div className="flex items-center gap-2">
-          <span className="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-accent to-accent-2 text-sm font-black text-ink glow">
-            F
+    <div className="flex h-full flex-col bg-surface backdrop-blur-2xl backdrop-saturate-150 float-in">
+      <header className="flex flex-shrink-0 items-center gap-3.5 border-b border-edge-soft px-5 pb-3.5 pt-4">
+        <div className="flex items-center gap-2.5">
+          <span className="grid h-[34px] w-[34px] place-items-center rounded-[10px] bg-gradient-to-br from-accent to-accent-2 glow">
+            <SearchGlyph className="h-[19px] w-[19px]" />
           </span>
-          <span className="text-lg font-semibold tracking-tight">DocFindy</span>
+          <span className="text-[19px] font-bold tracking-tight text-txt-strong">
+            DocFindy
+          </span>
+          {indexStatus?.files ? (
+            <span className="rounded-full bg-pill px-2.5 py-1 text-xs font-medium text-muted">
+              {t("index.files", { count: indexStatus.files })}
+            </span>
+          ) : null}
         </div>
-        {indexStatus?.files ? (
-          <span className="ml-2 rounded-full border border-edge bg-panel-2 px-3 py-1 text-xs text-muted">
-            {t("index.files", { count: indexStatus.files })}
-          </span>
-        ) : null}
-        <div className="ml-auto flex items-center gap-2">
-          <LangToggle
-            settings={settings}
-            onChanged={(s) => setSettings(s)}
-          />
+
+        <div className="ml-auto flex items-center gap-2.5">
+          <LangToggle settings={settings} onChanged={(s) => setSettings(s)} />
+          <ThemeToggle />
           <button
             onClick={() => setShowSettings(true)}
-            className="rounded-lg border border-edge bg-panel-2 px-3 py-1.5 text-sm text-muted transition hover:text-txt"
+            className="grid h-[34px] w-[34px] place-items-center rounded-[9px] bg-fill-2 text-muted transition hover:bg-fill-hover hover:text-txt"
             title="Settings"
           >
-            ⚙
+            <svg
+              width="17"
+              height="17"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
           </button>
         </div>
       </header>
@@ -160,17 +173,17 @@ export default function App() {
         </div>
         <div
           onPointerDown={startDrag}
-          className="group relative w-1 shrink-0 cursor-col-resize bg-edge transition hover:bg-accent-2"
+          className="group relative w-px shrink-0 cursor-col-resize bg-edge-soft transition hover:bg-accent"
           title="Drag to resize"
         >
-          <div className="absolute inset-y-0 -left-1 -right-1" />
+          <div className="absolute inset-y-0 -left-1.5 -right-1.5" />
         </div>
         <div className="min-w-0 shrink-0" style={{ width: `${previewPct}%` }}>
           <PreviewPane preview={preview} />
         </div>
       </div>
 
-      <footer className="border-t border-edge bg-panel px-5 py-1.5 text-center text-[10px] tracking-wide text-muted/70">
+      <footer className="flex-shrink-0 border-t border-edge-soft px-5 py-2 text-center text-xs font-medium text-muted-2">
         Made by G. Dall'Olmo
       </footer>
 

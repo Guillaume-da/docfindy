@@ -34,16 +34,16 @@ export default function IndexProgress() {
   })();
 
   return (
-    <div className="mb-3 rounded-xl border border-edge bg-panel-2 px-4 py-3">
+    <div className="mb-3 rounded-[11px] border border-edge-soft bg-fill px-4 py-3">
       <div className="flex items-center gap-2 text-sm">
         <span className="flex gap-1">
-          <span className="thinking-dot h-2 w-2 rounded-full bg-accent-2" />
-          <span className="thinking-dot h-2 w-2 rounded-full bg-accent-2" />
-          <span className="thinking-dot h-2 w-2 rounded-full bg-accent-2" />
+          <span className="thinking-dot h-2 w-2 rounded-full bg-accent" />
+          <span className="thinking-dot h-2 w-2 rounded-full bg-accent" />
+          <span className="thinking-dot h-2 w-2 rounded-full bg-accent" />
         </span>
         <span className="truncate text-muted">{label}</span>
       </div>
-      <div className="mt-2 h-1 overflow-hidden rounded-full bg-edge">
+      <div className="mt-2 h-1 overflow-hidden rounded-full bg-fill-2">
         <div className="h-full w-1/2 animate-pulse rounded-full bg-gradient-to-r from-accent to-accent-2" />
       </div>
     </div>

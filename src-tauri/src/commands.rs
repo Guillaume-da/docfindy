@@ -277,6 +277,9 @@ pub async fn read_preview(app: tauri::AppHandle, path: String) -> Result<Value, 
             Ok(v) => {
                 out["text"] = v["text"].clone();
                 out["blocks"] = v["blocks"].clone();
+                if !v["html"].is_null() {
+                    out["html"] = v["html"].clone();
+                }
             }
             Err(e) => out["text"] = json!(format!("({ext} extraction failed: {e})")),
         }
@@ -354,6 +357,51 @@ pub fn open_file(path: String) -> Result<(), String> {
             .spawn()
             .map(|_| ())
             .map_err(|e| e.to_string())
+    }
+}
+
+/// Copy the file itself (not its path) to the OS clipboard, so it can be
+/// pasted in the file manager. Unsupported platforms return an error and the
+/// UI falls back to copying the path as text.
+#[tauri::command]
+pub fn copy_file_to_clipboard(path: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        let escaped = path.replace('\'', "''");
+        let status = std::process::Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-Command",
+                &format!("Set-Clipboard -LiteralPath '{escaped}'"),
+            ])
+            .creation_flags(0x0800_0000)
+            .status()
+            .map_err(|e| e.to_string())?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err("clipboard copy failed".into())
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let escaped = path.replace('\\', "\\\\").replace('"', "\\\"");
+        let script = format!("set the clipboard to (POSIX file \"{escaped}\")");
+        let status = std::process::Command::new("osascript")
+            .args(["-e", &script])
+            .status()
+            .map_err(|e| e.to_string())?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err("clipboard copy failed".into())
+        }
+    }
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    {
+        let _ = path;
+        Err("unsupported".into())
     }
 }
 

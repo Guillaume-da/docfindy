@@ -305,6 +305,236 @@ def _docx_blocks(path: Path, max_chars: int) -> list[dict]:
     return blocks
 
 
+# --- rich HTML rendering: faithful docx preview (formatting/tables/images) --
+# Produces a sanitized HTML fragment from a whitelist of tags we emit
+# ourselves; all document text is escaped, so it is safe to inject with
+# dangerouslySetInnerHTML on the front end.
+
+_R_NS = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+_A_NS = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+_IMG_MIME = {
+    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+    ".gif": "image/gif", ".bmp": "image/bmp", ".webp": "image/webp",
+}
+_JC_ALIGN = {
+    "center": "center", "right": "right", "end": "right",
+    "both": "justify", "distribute": "justify",
+}
+
+
+def _docx_rels(z) -> dict:
+    import xml.etree.ElementTree as ET
+    rels: dict[str, str] = {}
+    try:
+        root = ET.fromstring(z.read("word/_rels/document.xml.rels"))
+    except Exception:  # noqa: BLE001 — no rels = no images/links
+        return rels
+    for rel in root:
+        rid, target = rel.get("Id"), rel.get("Target")
+        if rid and target:
+            rels[rid] = target
+    return rels
+
+
+def _run_wrappers(rPr):
+    """(open_tags, close_tags) for a run's bold/italic/underline/etc."""
+    if rPr is None:
+        return "", ""
+    W, opens, closes = _DOCX_W, [], []
+
+    def wrap(tag):
+        opens.append(f"<{tag}>")
+        closes.insert(0, f"</{tag}>")
+
+    if rPr.find(f"{W}b") is not None:
+        wrap("strong")
+    if rPr.find(f"{W}i") is not None:
+        wrap("em")
+    u = rPr.find(f"{W}u")
+    if u is not None and (u.get(f"{W}val") or "single") != "none":
+        wrap("u")
+    if rPr.find(f"{W}strike") is not None:
+        wrap("s")
+    va = rPr.find(f"{W}vertAlign")
+    if va is not None:
+        v = va.get(f"{W}val")
+        if v == "superscript":
+            wrap("sup")
+        elif v == "subscript":
+            wrap("sub")
+    return "".join(opens), "".join(closes)
+
+
+def _docx_rich(path: Path, max_chars: int) -> str | None:
+    """Faithful HTML fragment for a .docx: formatting, lists, tables, images."""
+    import base64
+    import html as htmlmod
+    import zipfile
+    import xml.etree.ElementTree as ET
+
+    W = _DOCX_W
+    try:
+        with zipfile.ZipFile(path) as z:
+            root = ET.fromstring(z.read("word/document.xml"))
+            rels = _docx_rels(z)
+            media: dict[str, str | None] = {}
+            budget = [6_000_000]  # total base64-inlined image bytes
+            total = [0]
+
+            def img_uri(rid):
+                if rid in media:
+                    return media[rid]
+                media[rid] = None
+                target = rels.get(rid)
+                if not target:
+                    return None
+                if target.startswith("/"):
+                    name = target[1:]
+                elif target.startswith("word/"):
+                    name = target
+                else:
+                    name = "word/" + target
+                ext = os.path.splitext(name)[1].lower()
+                mime = _IMG_MIME.get(ext)
+                if not mime:
+                    return None
+                try:
+                    data = z.read(name)
+                except KeyError:
+                    return None
+                if len(data) > 3_000_000 or len(data) > budget[0]:
+                    return None
+                budget[0] -= len(data)
+                uri = "data:%s;base64,%s" % (
+                    mime, base64.b64encode(data).decode("ascii"))
+                media[rid] = uri
+                return uri
+
+            def run_html(r):
+                o, c = _run_wrappers(r.find(f"{W}rPr"))
+                inner = []
+                for el in r.iter():
+                    tag = el.tag
+                    if tag == f"{W}t" and el.text:
+                        inner.append(htmlmod.escape(el.text))
+                        total[0] += len(el.text)
+                    elif tag == f"{W}tab":
+                        inner.append("<span class=\"docx-tab\"></span>")
+                    elif tag in (f"{W}br", f"{W}cr"):
+                        inner.append("<br/>")
+                    elif tag == f"{_A_NS}blip":
+                        uri = img_uri(el.get(f"{_R_NS}embed"))
+                        if uri:
+                            inner.append(
+                                '<img class="docx-img" src="%s" alt=""/>' % uri)
+                if not inner:
+                    return ""
+                return o + "".join(inner) + c
+
+            def para_inner(p):
+                parts = []
+                for child in p:
+                    ct = child.tag
+                    if ct == f"{W}r":
+                        parts.append(run_html(child))
+                    elif ct == f"{W}hyperlink":
+                        seg = "".join(run_html(r)
+                                      for r in child.findall(f"{W}r"))
+                        if not seg:
+                            continue
+                        href = rels.get(child.get(f"{_R_NS}id") or "")
+                        if href and href.startswith(
+                                ("http://", "https://", "mailto:")):
+                            parts.append(
+                                '<a href="%s" target="_blank" '
+                                'rel="noreferrer">%s</a>'
+                                % (htmlmod.escape(href, quote=True), seg))
+                        else:
+                            parts.append("<span class=\"docx-link\">%s</span>"
+                                         % seg)
+                return "".join(parts)
+
+            def para_html(p):
+                """(is_list_item, html_fragment)."""
+                pPr = p.find(f"{W}pPr")
+                align = ""
+                is_list = False
+                if pPr is not None:
+                    jc = pPr.find(f"{W}jc")
+                    if jc is not None:
+                        a = _JC_ALIGN.get(jc.get(f"{W}val") or "")
+                        if a:
+                            align = ' style="text-align:%s"' % a
+                    is_list = pPr.find(f"{W}numPr") is not None
+                content = para_inner(p)
+                if is_list:
+                    return True, content
+                if not content.strip():
+                    return False, '<p class="docx-sp"></p>'
+                level = _docx_para_level(p)
+                if 1 <= level <= 6:
+                    return False, "<h%d%s>%s</h%d>" % (
+                        level, align, content, level)
+                return False, "<p%s>%s</p>" % (align, content)
+
+            def table_html(tbl):
+                rows = []
+                for tr in tbl.findall(f"{W}tr"):
+                    cells = []
+                    for tc in tr.findall(f"{W}tc"):
+                        span = 1
+                        tcPr = tc.find(f"{W}tcPr")
+                        if tcPr is not None:
+                            gs = tcPr.find(f"{W}gridSpan")
+                            if gs is not None:
+                                try:
+                                    span = int(gs.get(f"{W}val", "1"))
+                                except ValueError:
+                                    span = 1
+                        body = []
+                        for p in tc.findall(f"{W}p"):
+                            _, frag = para_html(p)
+                            body.append(frag)
+                        attr = ' colspan="%d"' % span if span > 1 else ""
+                        cells.append("<td%s>%s</td>" % (attr, "".join(body)))
+                    rows.append("<tr>%s</tr>" % "".join(cells))
+                return ('<table class="docx-table"><tbody>%s</tbody></table>'
+                        % "".join(rows))
+
+            out = []
+            open_list = False
+            body = root.find(f"{W}body")
+            if body is None:
+                return None
+            for child in body:
+                tag = child.tag
+                if tag == f"{W}p":
+                    li, frag = para_html(child)
+                    if li:
+                        if not open_list:
+                            out.append("<ul class=\"docx-list\">")
+                            open_list = True
+                        out.append("<li>%s</li>" % frag)
+                    else:
+                        if open_list:
+                            out.append("</ul>")
+                            open_list = False
+                        out.append(frag)
+                elif tag == f"{W}tbl":
+                    if open_list:
+                        out.append("</ul>")
+                        open_list = False
+                    out.append(table_html(child))
+                if total[0] > max_chars:
+                    break
+            if open_list:
+                out.append("</ul>")
+            html = "".join(out)
+            return html or None
+    except Exception:  # noqa: BLE001 — any parse error: caller falls back
+        return None
+
+
 def _odt_walk(el) -> str:
     out = []
     if el.tag == f"{_ODT_T}tab":
@@ -410,8 +640,13 @@ def cmd_blocks(args: argparse.Namespace) -> None:
         # not a structured format — hand back flat text, no outline
         _emit({"path": str(p), "blocks": [], "text": _extract_text(p, args.max_chars)})
         return
-    _emit({"path": str(p), "blocks": blocks,
-           "text": "\n".join(b["text"] for b in blocks)[:args.max_chars]})
+    out = {"path": str(p), "blocks": blocks,
+           "text": "\n".join(b["text"] for b in blocks)[:args.max_chars]}
+    if p.suffix.lower() == ".docx":
+        html = _docx_rich(p, args.max_chars)
+        if html:
+            out["html"] = html
+    _emit(out)
 
 
 def cmd_text(args: argparse.Namespace) -> None:

@@ -4,16 +4,29 @@
     "placeholder": "Busca por nombre o contenido…",
     "send": "Enviar",
     "thinking": "Buscando…",
+    "emptyTitle": "Encuentra cualquier archivo. Solo pregunta.",
     "empty": "Empieza a escribir para encontrar cualquier archivo — por nombre o por su contenido.",
     "examples": "Prueba: \"presupuesto\" · \"impuestos\" · \"currículum\"",
+    "suggestions": ["Informe financiero", "Contratos", "Archivos de diseño", "Facturas"],
     "error": "Algo salió mal",
     "noKey": "Añade tu clave API de Claude en Ajustes para empezar a buscar.",
     "candidates": "{{count}} resultados — haz clic para previsualizar",
-    "noResults": "Sin archivos coincidentes.",
+    "noResultsTitle": "Sin resultados",
+    "noResults": "Prueba con otra palabra clave.",
     "clear": "Borrar",
     "smart": "Búsqueda inteligente (sinónimos + traducciones)",
     "smartTerms": "buscado",
-    "smartNoKey": "Añade una clave API de Claude en Ajustes para la búsqueda inteligente."
+    "smartNoKey": "Añade una clave API de Claude en Ajustes para la búsqueda inteligente.",
+    "pinned": "Anclados"
+  },
+  "menu": {
+    "open": "Abrir",
+    "reveal": "Mostrar en la carpeta",
+    "copyPath": "Copiar ruta",
+    "copyFile": "Copiar archivo",
+    "email": "Enviar por correo",
+    "pin": "Anclar a favoritos",
+    "unpin": "Desanclar"
   },
   "preview": {
     "title": "Vista previa",
@@ -33,10 +46,21 @@
     "aiNoKey": "Añade una clave API de Claude en Ajustes para obtener resúmenes IA.",
     "open": "Abrir",
     "reveal": "Mostrar",
-    "ask": "Pregunta sobre este documento…"
+    "ask": "Pregunta sobre este documento…",
+    "document": "Documento",
+    "rowsShown": "Se muestran las primeras {{count}} filas"
+  },
+  "theme": {
+    "toLight": "Cambiar a claro",
+    "toDark": "Cambiar a oscuro"
   },
   "settings": {
     "title": "Ajustes",
+    "connection": "Conexión",
+    "index": "Índice",
+    "appearance": "Apariencia",
+    "theme": "Tema",
+    "version": "Versión 1.0",
     "apiKey": "Clave API de Claude",
     "apiKeyPlaceholder": "sk-ant-…",
     "apiKeySaved": "Clave guardada",
@@ -56,6 +80,8 @@
     "start": "Construir índice y empezar",
     "indexing": "Construyendo grafo de conocimiento…",
     "pickFolder": "Elegir carpeta",
+    "browse": "Explorar",
+    "folderPlaceholder": "Ninguna carpeta seleccionada",
     "noFolders": "Añade al menos una carpeta."
   },
   "index": {

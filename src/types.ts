@@ -23,6 +23,7 @@ export interface Preview {
   size: number;
   mtime?: number;
   text?: string;
+  html?: string; // faithful rendered document (docx: formatting/tables/images)
   blocks?: DocBlock[];
   summary?: string | null;
 }

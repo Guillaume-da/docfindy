@@ -4,16 +4,29 @@
     "placeholder": "Search by name or content…",
     "send": "Send",
     "thinking": "Searching…",
+    "emptyTitle": "Find any file. Just ask.",
     "empty": "Start typing to find any file — by name or by what's inside.",
     "examples": "Try: \"budget\" · \"tax\" · \"resume\"",
+    "suggestions": ["Financial report", "Contracts", "Design files", "Invoices"],
     "error": "Something went wrong",
     "noKey": "Add your Claude API key in Settings to start searching.",
     "candidates": "{{count}} matches — click to preview",
-    "noResults": "No matching files.",
+    "noResultsTitle": "No matches",
+    "noResults": "Try a different keyword.",
     "clear": "Clear",
     "smart": "Smart search (synonyms + translations)",
     "smartTerms": "searched",
-    "smartNoKey": "Add a Claude API key in Settings for smart search."
+    "smartNoKey": "Add a Claude API key in Settings for smart search.",
+    "pinned": "Pinned"
+  },
+  "menu": {
+    "open": "Open",
+    "reveal": "Reveal in folder",
+    "copyPath": "Copy path",
+    "copyFile": "Copy file",
+    "email": "Send by email",
+    "pin": "Pin to favorites",
+    "unpin": "Unpin"
   },
   "preview": {
     "title": "Preview",
@@ -33,10 +46,21 @@
     "aiNoKey": "Add a Claude API key in Settings to get AI summaries.",
     "open": "Open",
     "reveal": "Reveal",
-    "ask": "Ask about this document…"
+    "ask": "Ask about this document…",
+    "document": "Document",
+    "rowsShown": "First {{count}} rows shown"
+  },
+  "theme": {
+    "toLight": "Switch to light",
+    "toDark": "Switch to dark"
   },
   "settings": {
     "title": "Settings",
+    "connection": "Connection",
+    "index": "Index",
+    "appearance": "Appearance",
+    "theme": "Theme",
+    "version": "Version 1.0",
     "apiKey": "Claude API key",
     "apiKeyPlaceholder": "sk-ant-…",
     "apiKeySaved": "Key saved",
@@ -56,6 +80,8 @@
     "start": "Build index & start",
     "indexing": "Building knowledge graph…",
     "pickFolder": "Choose a folder",
+    "browse": "Browse",
+    "folderPlaceholder": "No folder selected",
     "noFolders": "Add at least one folder."
   },
   "index": {
