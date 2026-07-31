@@ -8,7 +8,7 @@ while [ "$D" != "/" ] && [ ! -f "$D/engine/main.py" ]; do
   D="$(dirname "$D")"
 done
 if [ ! -f "$D/engine/main.py" ]; then
-  echo "findy-engine dev shim: engine/main.py not found above $0" >&2
+  echo "docfindy-engine dev shim: engine/main.py not found above $0" >&2
   exit 1
 fi
 exec "$D/engine/.venv/bin/python" "$D/engine/main.py" "$@"

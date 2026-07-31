@@ -6,8 +6,8 @@ use std::fs;
 use std::path::PathBuf;
 use tauri::Manager;
 
-const SERVICE: &str = "com.guillaume.findy";
-const USER: &str = "anthropic-api-key";
+pub(crate) const SERVICE: &str = "com.guillaume.docfindy";
+pub(crate) const USER: &str = "anthropic-api-key";
 
 fn fallback_path(app: &tauri::AppHandle) -> Option<PathBuf> {
     let dir = app.path().app_config_dir().ok()?;

@@ -1,11 +1,11 @@
-# Findy
+# DocFindy
 
 AI file-finding agent for the desktop. Chat with it in English or Spanish, it finds any document on your machine by name or content (SQLite FTS5 index), shows the path, previews the document, and opens it in your browser.
 
 ## Architecture
 
 - **Tauri 2** (Rust) — shell, Claude API client with tool-use loop, OS keychain storage
-- **findy-engine** (Python sidecar) — document indexer: walks the chosen roots (system dirs and dev noise excluded), extracts text from pdf/docx/odt/plain files, and maintains a SQLite FTS5 index (accent-insensitive, BM25-ranked). Only dependency: pypdf.
+- **docfindy-engine** (Python sidecar) — document indexer: walks the chosen roots (system dirs and dev noise excluded), extracts text from pdf/docx/odt/plain files, and maintains a SQLite FTS5 index (accent-insensitive, BM25-ranked). Only dependency: pypdf.
 - **rtk** (Rust sidecar) — [Rust Token Killer](https://github.com/rtk-ai/rtk): compresses filesystem probe output before it enters the Claude context (60-90% token savings)
 - **caveman** — [terse-output prompt rules](https://github.com/JuliusBrussee/caveman) baked into the agent system prompt (~65% output-token savings)
 - **React + Tailwind 4** — chat UI, EN/ES toggle, integrated preview pane
@@ -29,19 +29,28 @@ npm install
 npm run tauri dev
 ```
 
-The dev sidecar shims in `src-tauri/binaries/` forward to `engine/.venv`. Override with `FINDY_ENGINE="/path/python /path/main.py"`.
+The dev sidecar shims in `src-tauri/binaries/` forward to `engine/.venv`. Override with `DOCFINDY_ENGINE="/path/python /path/main.py"`.
 
 ## Windows installer
 
 GitHub Actions (`.github/workflows/build-windows.yml`) builds:
-1. `findy-engine.exe` (PyInstaller onefile)
+1. `docfindy-engine.exe` (PyInstaller onefile)
 2. `rtk.exe` (cargo install)
 3. NSIS installer via `tauri build`
 
-Trigger on tag `v*` or manually. Artifact: `findy-windows-installer`.
+Trigger on tag `v*` or manually. Artifact: `docfindy-windows-installer`.
 
 ## Settings & data
 
 - API key: OS keychain (Windows Credential Manager), file fallback
-- Settings: `<config>/com.guillaume.findy/settings.json`
-- Index: `<data>/com.guillaume.findy/graphify-out/content.db` + `files.json`
+- Settings: `<config>/com.guillaume.docfindy/settings.json`
+- Index: `<data>/com.guillaume.docfindy/graphify-out/content.db` + `files.json`
+
+### Migration from Findy
+
+The app was renamed from Findy to DocFindy, which changed the bundle
+identifier and therefore the paths above and the keychain service name.
+`src-tauri/src/migrate.rs` runs at startup and moves the old
+`com.guillaume.findy` config dir, data dir and keychain entry to the new
+names. It is a no-op on fresh installs and once migration has happened; if
+the move fails, the old directory is left in place so nothing is lost.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Findy engine — document indexing sidecar.
+"""DocFindy engine — document indexing sidecar.
 
 JSON-over-stdout CLI consumed by the Tauri (Rust) core. Every subcommand
 prints exactly one JSON document on stdout; errors go to stderr with a
@@ -207,7 +207,7 @@ def _build(out_dir: Path, roots: list[Path]) -> None:
 
     # stale artifacts from the graphify era
     (out_dir / "graph.json").unlink(missing_ok=True)
-    (out_dir / ".findy_extract.json").unlink(missing_ok=True)
+    (out_dir / ".docfindy_extract.json").unlink(missing_ok=True)
 
     _emit({"ok": True, "files": len(files_index), "fts_docs": fts_docs,
            "seconds": round(time.time() - t0, 1)})
@@ -619,7 +619,7 @@ def cmd_search(args: argparse.Namespace) -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    ap = argparse.ArgumentParser(prog="findy-engine")
+    ap = argparse.ArgumentParser(prog="docfindy-engine")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     p = sub.add_parser("detect")

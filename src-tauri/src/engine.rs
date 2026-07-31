@@ -1,8 +1,8 @@
-//! findy-engine sidecar (document indexer). Resolution order:
-//! 1. FINDY_ENGINE env var — dev override, e.g.
-//!    `FINDY_ENGINE="/home/g/projects/findy/engine/.venv/bin/python /home/g/projects/findy/engine/main.py"`
+//! docfindy-engine sidecar (document indexer). Resolution order:
+//! 1. DOCFINDY_ENGINE env var — dev override, e.g.
+//!    `DOCFINDY_ENGINE="/home/g/projects/docfindy/engine/.venv/bin/python /home/g/projects/docfindy/engine/main.py"`
 //! 2. sidecar binary next to the app executable (production bundle)
-//! 3. `findy-engine` on PATH
+//! 3. `docfindy-engine` on PATH
 
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -11,21 +11,21 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
 fn engine_command() -> (String, Vec<String>) {
-    if let Ok(dev) = std::env::var("FINDY_ENGINE") {
+    if let Ok(dev) = std::env::var("DOCFINDY_ENGINE") {
         let mut parts = dev.split_whitespace().map(String::from);
-        let prog = parts.next().unwrap_or_else(|| "findy-engine".into());
+        let prog = parts.next().unwrap_or_else(|| "docfindy-engine".into());
         return (prog, parts.collect());
     }
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
-            let name = if cfg!(windows) { "findy-engine.exe" } else { "findy-engine" };
+            let name = if cfg!(windows) { "docfindy-engine.exe" } else { "docfindy-engine" };
             let p = dir.join(name);
             if p.exists() {
                 return (p.to_string_lossy().into_owned(), vec![]);
             }
         }
     }
-    ("findy-engine".into(), vec![])
+    ("docfindy-engine".into(), vec![])
 }
 
 /// Index output directory: `<app_data_dir>/graphify-out`

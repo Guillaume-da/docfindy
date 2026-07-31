@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Findy",
+  "productName": "DocFindy",
   "version": "0.1.0",
-  "identifier": "com.guillaume.findy",
+  "identifier": "com.guillaume.docfindy",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Findy",
+        "title": "DocFindy",
         "width": 1200,
         "height": 780,
         "minWidth": 900,
@@ -31,7 +31,7 @@
     "active": true,
     "targets": "all",
     "externalBin": [
-      "binaries/findy-engine",
+      "binaries/docfindy-engine",
       "binaries/rtk"
     ],
     "icon": [

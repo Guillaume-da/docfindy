@@ -1,6 +1,7 @@
 mod claude;
 mod commands;
 mod engine;
+mod migrate;
 mod rtk;
 mod secrets;
 
@@ -9,6 +10,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            migrate::run(app.handle());
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::get_settings,
             commands::save_settings,

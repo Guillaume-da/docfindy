@@ -1,12 +1,12 @@
 [package]
-name = "findy"
+name = "docfindy"
 version = "0.1.0"
-description = "Findy — AI file-finding agent"
+description = "DocFindy — AI file-finding agent"
 authors = ["Guillaume"]
 edition = "2021"
 
 [lib]
-name = "findy_lib"
+name = "docfindy_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

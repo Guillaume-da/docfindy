@@ -1,6 +1,6 @@
-# PyInstaller spec — builds the findy-engine onefile sidecar.
+# PyInstaller spec — builds the docfindy-engine onefile sidecar.
 # Usage: pyinstaller engine.spec
-# Output: dist/findy-engine[.exe]
+# Output: dist/docfindy-engine[.exe]
 
 a = Analysis(
     ['main.py'],
@@ -23,7 +23,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='findy-engine',
+    name='docfindy-engine',
     debug=False,
     strip=False,
     upx=False,

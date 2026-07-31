@@ -1,5 +1,5 @@
 {
-  "app": { "name": "Findy", "tagline": "Find any file. Just ask." },
+  "app": { "name": "DocFindy", "tagline": "Find any file. Just ask." },
   "chat": {
     "placeholder": "Search by name or content…",
     "send": "Send",
@@ -49,8 +49,8 @@
     "close": "Close"
   },
   "onboarding": {
-    "welcome": "Welcome to Findy",
-    "intro": "Findy indexes your files locally and finds them instantly as you type — by name or by content.",
+    "welcome": "Welcome to DocFindy",
+    "intro": "DocFindy indexes your files locally and finds them instantly as you type — by name or by content.",
     "step1": "1 · Claude API key (optional)",
     "step2": "2 · Choose folders to index",
     "start": "Build index & start",

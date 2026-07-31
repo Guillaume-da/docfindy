@@ -36,7 +36,11 @@ export default function App() {
   // width of the preview pane, as a % of the split area, drag-adjustable
   const splitRef = useRef<HTMLDivElement>(null);
   const [previewPct, setPreviewPct] = useState(() => {
-    const saved = Number(localStorage.getItem("findy.previewPct"));
+    // "findy.previewPct" is the pre-rename key; read it once so existing users
+    // keep their pane width
+    const saved = Number(
+      localStorage.getItem("docfindy.previewPct") ?? localStorage.getItem("findy.previewPct"),
+    );
     return saved >= 20 && saved <= 75 ? saved : 42;
   });
   const pctRef = useRef(previewPct);
@@ -56,7 +60,7 @@ export default function App() {
       dragging.current = false;
       document.body.style.userSelect = "";
       document.body.style.cursor = "";
-      localStorage.setItem("findy.previewPct", String(Math.round(pctRef.current)));
+      localStorage.setItem("docfindy.previewPct", String(Math.round(pctRef.current)));
     }
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
@@ -128,7 +132,7 @@ export default function App() {
           <span className="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-accent to-accent-2 text-sm font-black text-ink glow">
             F
           </span>
-          <span className="text-lg font-semibold tracking-tight">Findy</span>
+          <span className="text-lg font-semibold tracking-tight">DocFindy</span>
         </div>
         {indexStatus?.files ? (
           <span className="ml-2 rounded-full border border-edge bg-panel-2 px-3 py-1 text-xs text-muted">

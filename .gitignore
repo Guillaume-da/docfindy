@@ -23,7 +23,7 @@ dist-ssr
 *.sln
 *.sw?
 
-# findy
+# docfindy
 engine/.venv/
 engine/build/
 engine/dist/
