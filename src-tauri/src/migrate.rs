@@ -31,42 +31,75 @@ fn sibling(new: &Path, old_leaf: &str) -> PathBuf {
     }
 }
 
-fn is_empty_dir(p: &Path) -> bool {
-    fs::read_dir(p).map(|mut d| d.next().is_none()).unwrap_or(false)
-}
-
 fn migrate_dir(old: &Path, new: &Path) {
     if !old.is_dir() || old == new {
         return;
-    }
-    // Already migrated, or the user has real data under the new identity.
-    if new.is_dir() && !is_empty_dir(new) {
-        return;
-    }
-    // `rename` onto an existing dir fails on Windows; drop the empty placeholder.
-    if new.is_dir() {
-        let _ = fs::remove_dir(new);
     }
     if let Some(parent) = new.parent() {
         let _ = fs::create_dir_all(parent);
     }
 
-    if fs::rename(old, new).is_ok() {
+    // Nothing at the new location yet: move the whole tree in one go.
+    if !new.exists() && fs::rename(old, new).is_ok() {
         eprintln!("migrated {} -> {}", old.display(), new.display());
         return;
     }
-    // Different filesystems (rename gives EXDEV): fall back to copy + remove.
-    match copy_tree(old, new) {
-        Ok(()) => {
-            let _ = fs::remove_dir_all(old);
-            eprintln!("migrated (copy) {} -> {}", old.display(), new.display());
+
+    // The new directory usually already exists by the time this runs: the
+    // webview creates its own caches under the new identifier before
+    // `setup()` is called. A whole-directory move is therefore not enough and
+    // "new dir is non-empty" does not mean "already migrated" — that test
+    // would skip the index and silently lose it. Merge entry by entry
+    // instead, keeping anything the new location already has.
+    if !merge_into(old, new) {
+        // Leave the old directory alone so the data stays recoverable.
+        eprintln!("migration incomplete for {}, old data left in place", old.display());
+        return;
+    }
+    // Every entry either moved or already had a counterpart under the new
+    // name, so what is left here is redundant.
+    let _ = fs::remove_dir_all(old);
+    eprintln!("migrated {} -> {}", old.display(), new.display());
+}
+
+/// Move each entry of `old` that has no counterpart in `new`. Returns false if
+/// any entry could not be moved.
+fn merge_into(old: &Path, new: &Path) -> bool {
+    if fs::create_dir_all(new).is_err() {
+        return false;
+    }
+    let Ok(entries) = fs::read_dir(old) else {
+        return false;
+    };
+    let mut ok = true;
+    for entry in entries.flatten() {
+        let src = entry.path();
+        let dst = new.join(entry.file_name());
+        if dst.exists() {
+            continue;
         }
-        Err(e) => {
-            // Leave the old dir untouched so the data is still recoverable.
-            let _ = fs::remove_dir_all(new);
-            eprintln!("migration failed for {}: {e}", old.display());
+        if fs::rename(&src, &dst).is_ok() {
+            continue;
+        }
+        // Different filesystems (rename gives EXDEV): copy instead.
+        let copied = if src.is_dir() {
+            copy_tree(&src, &dst).is_ok()
+        } else {
+            fs::copy(&src, &dst).is_ok()
+        };
+        if copied {
+            let _ = if src.is_dir() {
+                fs::remove_dir_all(&src)
+            } else {
+                fs::remove_file(&src)
+            };
+        } else {
+            let _ = fs::remove_dir_all(&dst);
+            eprintln!("could not migrate {}", src.display());
+            ok = false;
         }
     }
+    ok
 }
 
 fn copy_tree(src: &Path, dst: &Path) -> std::io::Result<()> {

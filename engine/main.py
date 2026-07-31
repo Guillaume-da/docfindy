@@ -205,9 +205,11 @@ def _build(out_dir: Path, roots: list[Path]) -> None:
     _progress("fts", files=len(files_index))
     fts_docs = _build_fts(out_dir, files_index)
 
-    # stale artifacts from the graphify era
+    # stale artifacts from the graphify era — these names are historical, they
+    # are what is actually on disk from older versions, so they do not follow
+    # the DocFindy rename
     (out_dir / "graph.json").unlink(missing_ok=True)
-    (out_dir / ".docfindy_extract.json").unlink(missing_ok=True)
+    (out_dir / ".findy_extract.json").unlink(missing_ok=True)
 
     _emit({"ok": True, "files": len(files_index), "fts_docs": fts_docs,
            "seconds": round(time.time() - t0, 1)})
