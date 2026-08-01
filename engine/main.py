@@ -90,7 +90,7 @@ SKIP_FILES = {"desktop.ini", "thumbs.db", ".ds_store"}
 
 # Never index secrets, by name prefix or suffix; counted as skipped_sensitive.
 SENSITIVE_PREFIXES = (".env", "id_rsa", "id_ed25519", "id_ecdsa")
-SENSITIVE_SUFFIXES = {".pem", ".key", ".kdbx", ".pfx", ".p12", ".ppk"}
+SENSITIVE_SUFFIXES = {".pem", ".key", ".kdbx", ".pfx", ".p12", ".ppk", ".keychain"}
 
 DOCUMENT_SUFFIXES = {
     ".pdf", ".docx", ".doc", ".odt", ".rtf", ".txt", ".md", ".markdown",

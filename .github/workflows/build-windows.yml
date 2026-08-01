@@ -30,8 +30,10 @@ jobs:
         shell: bash
 
       # --- sidecar 2: rtk (Rust Token Killer)
+      # Pinned to a reviewed tag: an unpinned --git install would pull whatever
+      # is on main at build time straight into the shipped installer.
       - name: Build rtk sidecar
-        run: cargo install --git https://github.com/rtk-ai/rtk --locked
+        run: cargo install --git https://github.com/rtk-ai/rtk --tag v0.9.4 --locked
         shell: bash
 
       # Tauri expects sidecars suffixed with the target triple

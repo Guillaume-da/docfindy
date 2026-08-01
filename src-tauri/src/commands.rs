@@ -47,6 +47,21 @@ fn merge_settings(current: Value, incoming: Value) -> Value {
     }
 }
 
+/// Defence in depth for commands that take a path from the webview: the
+/// frontend is bundled and trusted, but if script injection ever landed there,
+/// these commands would otherwise hand it arbitrary file read/open. Validate
+/// against the indexed roots (canonicalised, credential files refused) exactly
+/// like the agent's tools; the original path string is kept for the OS calls,
+/// which on Windows do not all accept the `\\?\` form canonicalisation yields.
+fn ensure_in_roots(app: &tauri::AppHandle, path: &str) -> Result<(), String> {
+    let settings = load_settings(app);
+    let roots: Vec<String> = settings["roots"]
+        .as_array()
+        .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .unwrap_or_default();
+    claude::resolve_in_roots(path, &roots).map(|_| ())
+}
+
 #[tauri::command]
 pub fn set_api_key(app: tauri::AppHandle, key: String) -> Result<(), String> {
     secrets::set(&app, key.trim())
@@ -168,6 +183,7 @@ pub async fn summarize_file(
     path: String,
     lang: Option<String>,
 ) -> Result<Value, String> {
+    ensure_in_roots(&app, &path)?;
     let api_key = secrets::get(&app).ok_or("no_api_key")?;
     let settings = load_settings(&app);
     // caller passes the UI's current language so the summary follows the toggle
@@ -192,6 +208,7 @@ pub async fn ask_document(
     question: String,
     lang: Option<String>,
 ) -> Result<Value, String> {
+    ensure_in_roots(&app, &path)?;
     let api_key = secrets::get(&app).ok_or("no_api_key")?;
     let settings = load_settings(&app);
     let lang = lang
@@ -242,6 +259,7 @@ const IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp",
 
 #[tauri::command]
 pub async fn read_preview(app: tauri::AppHandle, path: String) -> Result<Value, String> {
+    ensure_in_roots(&app, &path)?;
     let p = PathBuf::from(&path);
     let meta = fs::metadata(&p).map_err(|e| format!("not found: {e}"))?;
     let ext = p
@@ -294,7 +312,7 @@ pub async fn read_preview(app: tauri::AppHandle, path: String) -> Result<Value, 
 /// Open the file in the default web browser (not the default file handler).
 #[tauri::command]
 pub fn open_in_browser(app: tauri::AppHandle, path: String) -> Result<(), String> {
-    let _ = &app;
+    ensure_in_roots(&app, &path)?;
     let url = format!(
         "file:///{}",
         path.trim_start_matches('/').replace('\\', "/")
@@ -332,7 +350,7 @@ pub fn open_in_browser(app: tauri::AppHandle, path: String) -> Result<(), String
 /// download — could break out and run as a command.
 #[tauri::command]
 pub fn open_file(app: tauri::AppHandle, path: String) -> Result<(), String> {
-    let _ = &app;
+    ensure_in_roots(&app, &path)?;
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     {
         use tauri_plugin_opener::OpenerExt;
@@ -360,7 +378,8 @@ pub fn open_file(app: tauri::AppHandle, path: String) -> Result<(), String> {
 /// until it did not; keeping it out of the script means there is nothing to
 /// escape.
 #[tauri::command]
-pub fn copy_file_to_clipboard(path: String) -> Result<(), String> {
+pub fn copy_file_to_clipboard(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    ensure_in_roots(&app, &path)?;
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
@@ -417,7 +436,8 @@ fn safe_for_explorer_arg(path: &str) -> bool {
 
 /// Reveal the file in the OS file manager, selected.
 #[tauri::command]
-pub fn reveal_in_folder(path: String) -> Result<(), String> {
+pub fn reveal_in_folder(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    ensure_in_roots(&app, &path)?;
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;

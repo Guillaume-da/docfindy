@@ -178,7 +178,7 @@ fn is_sensitive(path: &std::path::Path) -> bool {
 /// has just been fed — so a hostile document can ask it to read anything on
 /// disk. Both sides are checked after canonicalisation, which resolves `..` and
 /// symlinks, so neither traversal nor a symlink planted inside a root escapes.
-fn resolve_in_roots(path: &str, roots: &[String]) -> Result<std::path::PathBuf, String> {
+pub(crate) fn resolve_in_roots(path: &str, roots: &[String]) -> Result<std::path::PathBuf, String> {
     if roots.is_empty() {
         return Err("no indexed roots configured".into());
     }
