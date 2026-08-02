@@ -47,7 +47,7 @@ Dark by default, light on demand — the toggle sits next to the language switch
 
 Grab the installer from the [releases page](https://github.com/Guillaume-da/docfindy/releases). Windows 10 or 11, **x64 only**. Everything is bundled — no Python or Rust needed on the target machine. If the WebView2 runtime is missing, the installer fetches it, so that step needs a connection; Windows 11 ships it already.
 
-Builds are **not yet code-signed**, so Windows reports "Unknown publisher" and SmartScreen may block the download — *More info → Run anyway*. Each release carries a SHA-256 checksum if you want to verify what you downloaded. See [Signing the Windows installer](#signing-the-windows-installer) for how this gets fixed.
+Builds are **not code-signed**, so Windows reports "Unknown publisher" and SmartScreen may block the download — *More info → Run anyway*. Each release carries a SHA-256 checksum so you can verify what you downloaded.
 
 ### Build from source
 
@@ -182,56 +182,6 @@ privately through GitHub Security Advisories rather than in a public issue.
 3. The NSIS installer — `tauri build`
 
 Artifact: `docfindy-windows-installer`.
-
-### Signing the Windows installer
-
-An unsigned installer is awkward to hand to anyone: Windows shows "Unknown publisher" and SmartScreen blocks it, which looks identical to something actually being wrong. A self-signed certificate does not help — it is only an authority on machines that have been told to trust it, so for a third party it is no better than no signature at all.
-
-[SignPath](https://about.signpath.io/product/open-source) issues certificates and signs builds free of charge for open-source projects. The `sign` job in `build-windows.yml` is already wired for it and **skips itself until the repository is enrolled**, so the build keeps working meanwhile.
-
-To turn it on:
-
-1. Apply for the SignPath open-source plan and install the **SignPath GitHub App** on this repository. It verifies that the artifact came from a GitHub-hosted runner in this repo, which is what lets them sign without reviewing every build by hand.
-2. In SignPath, create a project and two signing policies — one for test signing, one for release signing.
-3. Set the artifact configuration. The workflow uploads a GitHub artifact, which is a **zip** containing the installer, so the configuration has to descend into it. The wildcard means it does not need editing at each version, and `max-matches` defaults to 1, which is what we want — one installer per build:
-
-   ```xml
-   <artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
-     <zip-file>
-       <pe-file path="DocFindy_*_x64-setup.exe">
-         <authenticode-sign />
-       </pe-file>
-     </zip-file>
-   </artifact-configuration>
-   ```
-4. Add these **repository variables** (Settings → Secrets and variables → Actions → Variables):
-
-   | Variable | Value |
-   |----------|-------|
-   | `SIGNPATH_ORGANIZATION_ID` | your SignPath organization id |
-   | `SIGNPATH_PROJECT_SLUG` | the project slug |
-   | `SIGNPATH_ARTIFACT_CONFIG_SLUG` | usually `default artifact configuration` |
-   | `SIGNPATH_RELEASE_POLICY_SLUG` | release signing policy |
-   | `SIGNPATH_TEST_POLICY_SLUG` | test signing policy |
-
-5. Add one **secret**: `SIGNPATH_API_TOKEN`.
-
-   ```bash
-   gh variable set SIGNPATH_ORGANIZATION_ID     --body '…' --repo Guillaume-da/docfindy
-   gh variable set SIGNPATH_PROJECT_SLUG        --body '…' --repo Guillaume-da/docfindy
-   gh variable set SIGNPATH_ARTIFACT_CONFIG_SLUG --body '…' --repo Guillaume-da/docfindy
-   gh variable set SIGNPATH_RELEASE_POLICY_SLUG --body '…' --repo Guillaume-da/docfindy
-   gh variable set SIGNPATH_TEST_POLICY_SLUG    --body '…' --repo Guillaume-da/docfindy
-   gh secret   set SIGNPATH_API_TOKEN           --repo Guillaume-da/docfindy
-   ```
-
-Check it with a manual dispatch before tagging: that signs with the test policy, so a misconfiguration cannot spend a release signature.
-
-```bash
-gh workflow run build-windows.yml --ref main
-```
-
-The job keys off `SIGNPATH_ORGANIZATION_ID` being set. A `v*` tag signs with the release policy and attaches the signed installer plus `SHA256SUMS.txt` to the release; a manual dispatch signs with the test policy, so a dry run cannot spend a release signature.
 
 ## Troubleshooting
 
