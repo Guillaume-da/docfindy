@@ -17,6 +17,8 @@ Desktop file finder that searches **inside** your documents, not just their name
 
 With an API key you also get: an on-demand AI summary of the previewed document, ask-a-question about the open document, and smart search that expands your query with synonyms and FR/EN translations before hitting the index.
 
+**Bring your own provider.** Claude, ChatGPT or Kimi — pick one in Settings and paste that provider's key. Each key is stored separately, so switching provider does not make you re-enter the other one. The model list is fetched from the provider itself, so a newly released model is selectable without waiting for a DocFindy update.
+
 **The API key is optional.** Without it, indexing, search, preview and open all work; AI actions remain visible but ask you to configure a key when used.
 
 ## Screenshots
@@ -26,6 +28,12 @@ With an API key you also get: an on-demand AI summary of the previewed document,
 Pick the folders to index. The API key field can be left empty.
 
 ![Onboarding screen](docs/screenshots/onboarding.png)
+
+### Settings
+
+Choose the AI provider, store its key, and pick a model from the list the provider reports.
+
+![Settings panel](docs/screenshots/settings.png)
 
 ### Light theme
 
@@ -65,12 +73,23 @@ npm run tauri build    # production bundle
 | **docfindy-engine** (Python sidecar) | Walks the chosen roots, extracts text from pdf/docx/odt/plain files, maintains the SQLite FTS5 index. Only dependency: `pypdf` |
 | **rtk** (Rust sidecar) | [Rust Token Killer](https://github.com/rtk-ai/rtk) — compresses filesystem probe output before it enters the model context (60-90% fewer tokens) |
 | **caveman** | [Terse-output prompt rules](https://github.com/JuliusBrussee/caveman) baked into the agent system prompt (~65% fewer output tokens) |
-| **React 19 + Tailwind 4** | Search UI, rich preview pane, theme and EN/ES toggles |
+| **React 19 + Tailwind 4** | Search UI, rich preview pane, theme and EN/ES/FR toggles |
 
 The frontend can also run standalone in a browser: `src/dev/tauri-mock.ts` stubs the Tauri commands with sample data, which is handy for UI work without a Rust rebuild.
 
 ```bash
 VITE_MOCK=1 npm run dev
+```
+
+Add `?mock=fresh` to the URL to get the first-run state (empty index) instead of
+the seeded one.
+
+The screenshots in this README are regenerated from that mocked UI, through
+WebKitGTK — the engine the Linux build ships with, so they show the real thing:
+
+```bash
+VITE_MOCK=1 npm run dev              # terminal 1
+python3 docs/screenshots/capture.py  # terminal 2
 ```
 
 ### Agent tools
@@ -168,7 +187,9 @@ Artifact: `docfindy-windows-installer`.
 
 **Nothing is found even though the file exists.** Check that its folder is in your indexed roots (⚙ → folders), and that the file type is supported. Rebuild with ⚙ → rebuild index after adding folders.
 
-**AI actions report that no key is configured.** Add one in ⚙; instant search works without it.
+**AI actions report that no key is configured.** Add one in ⚙ for the provider you selected — keys are per provider, so a Claude key does not cover ChatGPT. Instant search works without any key.
+
+**The model list will not load.** It is fetched from the provider, so it needs a saved, valid key and network access. When it fails the field falls back to free text — type the model id and it is used as-is.
 
 **Blank window or GPU warnings on WSL.** WSLg has no working DRI3 device. Run with software rendering:
 
@@ -191,6 +212,7 @@ src-tauri/src/   Rust core
   migrate.rs       Pre-rename data migration
   secrets.rs       Keychain + file fallback
   rtk.rs           rtk-compressed filesystem probe
+docs/screenshots/  README images + capture.py that regenerates them
 ```
 
 ---

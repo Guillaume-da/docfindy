@@ -164,6 +164,8 @@ const settings = {
   models: { anthropic: "claude-sonnet-5" },
 };
 
+const FRESH = new URLSearchParams(location.search).get("mock") === "fresh";
+
 const delay = <T,>(v: T, ms = 120) => new Promise<T>((r) => setTimeout(() => r(v), ms));
 
 export async function invoke<T = unknown>(cmd: string, args?: Record<string, unknown>): Promise<T> {
@@ -185,7 +187,13 @@ export async function invoke<T = unknown>(cmd: string, args?: Record<string, unk
     case "open_provider_keys_page":
       return delay(undefined as T);
     case "index_status":
-      return delay({ exists: true, files: 2174, roots: settings.roots } as T);
+      // ?mock=fresh reproduces a first run, so the onboarding screen can be
+      // reached (and screenshotted) without clearing anything.
+      return delay(
+        (FRESH
+          ? { exists: false }
+          : { exists: true, files: 2174, roots: settings.roots }) as T,
+      );
     case "quick_search":
     case "smart_search": {
       const q = String((args?.query as string) ?? "");
