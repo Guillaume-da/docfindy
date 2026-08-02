@@ -147,21 +147,33 @@ export default function Settings({
     "rounded-[9px] border border-edge bg-fill px-4 py-2 text-[12.5px] font-semibold text-muted transition hover:bg-fill-hover hover:text-txt disabled:opacity-40";
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-6 backdrop-blur-sm fade-in">
-      <div className="max-h-[88vh] w-[600px] max-w-[94vw] overflow-y-auto rounded-[18px] border border-edge bg-surface p-7 shadow-2xl backdrop-blur-2xl">
-        <div className="mb-6 flex items-center justify-between">
-          <h2 className="text-2xl font-bold tracking-tight text-txt-strong">
-            {t("settings.title")}
-          </h2>
-          <button
-            onClick={onClose}
-            className="grid h-9 w-9 place-items-center rounded-[9px] bg-fill-2 text-muted transition hover:bg-fill-hover hover:text-txt"
-          >
-            ✕
-          </button>
-        </div>
+    // A full screen rather than a dialog: at 600px wide every section stacked
+    // into one column and the panel scrolled inside itself, which reads as
+    // cramped. Side by side, the whole thing fits the window.
+    <div className="flex h-full min-h-0 flex-col bg-surface fade-in">
+      <div className="flex flex-shrink-0 items-center gap-3 border-b border-edge-soft px-7 py-4">
+        <button
+          onClick={onClose}
+          className="grid h-9 w-9 place-items-center rounded-[9px] bg-fill-2 text-muted transition hover:bg-fill-hover hover:text-txt"
+          aria-label={t("settings.close")}
+          title={t("settings.close")}
+        >
+          ←
+        </button>
+        <h2 className="text-xl font-bold tracking-tight text-txt-strong">
+          {t("settings.title")}
+        </h2>
+        <button onClick={onClose} className="ml-auto rounded-[9px] border border-edge bg-fill px-4 py-2 text-[12.5px] font-semibold text-muted transition hover:bg-fill-hover hover:text-txt">
+          {t("settings.close")}
+        </button>
+      </div>
 
+      {/* overflow is a safety valve for very short windows, not the usual case */}
+      <div className="min-h-0 flex-1 overflow-y-auto px-7 py-6">
+        <div className="mx-auto max-w-[1100px]">
+        <div className="flex flex-col gap-x-7 lg:flex-row lg:items-start">
         {/* Connection */}
+        <div className="lg:min-w-0 lg:flex-1">
         <div className={sectionLabel}>{t("settings.connection")}</div>
         <div className={card}>
           <label className="mb-2 block text-[13px] font-semibold text-muted">
@@ -244,8 +256,10 @@ export default function Settings({
             </div>
           </div>
         </div>
+        </div>
 
-        {/* Index */}
+        {/* Index and Appearance share the second column */}
+        <div className="lg:min-w-0 lg:flex-1">
         <div className={sectionLabel}>{t("settings.index")}</div>
         <div className={card}>
           <label className="mb-2 block text-[13px] font-semibold text-muted">
@@ -308,22 +322,24 @@ export default function Settings({
               {error}
             </div>
           )}
-        </div>
-
-        {/* Appearance */}
-        <div className={sectionLabel}>{t("settings.appearance")}</div>
-        <div className="mb-6 rounded-[14px] border border-edge-soft bg-panel px-[18px]">
-          <div className="flex items-center justify-between border-b border-edge-soft py-3.5">
-            <div className="text-sm font-medium text-txt">
-              {t("settings.theme")}
-            </div>
-            <ThemeToggle />
           </div>
-          <div className="flex items-center justify-between py-3.5">
-            <div className="text-sm font-medium text-txt">
-              {t("settings.language")}
+
+          {/* Appearance */}
+          <div className={sectionLabel}>{t("settings.appearance")}</div>
+          <div className="mb-6 rounded-[14px] border border-edge-soft bg-panel px-[18px]">
+            <div className="flex items-center justify-between border-b border-edge-soft py-3.5">
+              <div className="text-sm font-medium text-txt">
+                {t("settings.theme")}
+              </div>
+              <ThemeToggle />
             </div>
-            <LangToggle settings={settings} onChanged={() => {}} />
+            <div className="flex items-center justify-between py-3.5">
+              <div className="text-sm font-medium text-txt">
+                {t("settings.language")}
+              </div>
+              <LangToggle settings={settings} onChanged={() => {}} />
+            </div>
+          </div>
           </div>
         </div>
 
@@ -332,6 +348,7 @@ export default function Settings({
             DocFindy — {t("settings.version")}
           </div>
           <div className="mt-0.5 text-xs text-muted-2">Made by G. Dall'Olmo</div>
+        </div>
         </div>
       </div>
     </div>

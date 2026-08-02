@@ -17,7 +17,9 @@ export default function Onboarding({
   onDone: () => void;
 }) {
   const { t } = useTranslation();
-  const [apiKey, setApiKey] = useState("");
+  // One draft key per provider: switching tabs must not throw away what was
+  // already typed, so someone holding two keys can enter both in one pass.
+  const [keys, setKeys] = useState<Partial<Record<ProviderId, string>>>({});
   const [provider, setProvider] = useState<ProviderId>("anthropic");
   const [roots, setRoots] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -38,12 +40,18 @@ export default function Onboarding({
     }
     setBusy(true);
     try {
-      if (apiKey.trim()) {
-        await invoke("set_api_key", { key: apiKey, provider });
+      const entered = PROVIDERS.filter((p) => keys[p.id]?.trim());
+      for (const p of entered) {
+        await invoke("set_api_key", { key: keys[p.id]!.trim(), provider: p.id });
+      }
+      if (entered.length > 0) {
+        // Start on the tab that is selected, as long as it has a key —
+        // otherwise on the first one that does.
+        const active = entered.find((p) => p.id === provider) ?? entered[0];
         await invoke("save_settings", {
           settings: {
-            provider,
-            models: { [provider]: providerInfo(provider).defaultModel },
+            provider: active.id,
+            models: Object.fromEntries(entered.map((p) => [p.id, p.defaultModel])),
           },
         });
       }
@@ -92,19 +100,23 @@ export default function Onboarding({
               }`}
             >
               {p.label}
+              {keys[p.id]?.trim() && <span className="ml-1.5 text-accent">•</span>}
             </button>
           ))}
         </div>
-        <div className="relative mb-6 flex items-center">
+        <div className="relative mb-1.5 flex items-center">
           <LockIcon className="pointer-events-none absolute left-3.5 h-4 w-4 text-muted-2" />
           <input
             type="password"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
+            value={keys[provider] ?? ""}
+            onChange={(e) => setKeys({ ...keys, [provider]: e.target.value })}
             placeholder={providerInfo(provider).keyPlaceholder}
             className="w-full rounded-[11px] border border-edge bg-fill py-3 pl-10 pr-3.5 text-sm text-txt outline-none transition placeholder:text-muted-2 focus:bg-fill-2 focus:shadow-[0_0_0_3px_rgba(10,132,255,0.18)]"
           />
         </div>
+        <p className="mb-6 text-[12px] leading-relaxed text-muted-2">
+          {t("onboarding.keyHint")}
+        </p>
 
         <label className="mb-2 block text-[11.5px] font-semibold uppercase tracking-[0.05em] text-label">
           {t("onboarding.step2")}

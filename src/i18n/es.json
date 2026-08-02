@@ -119,7 +119,8 @@
     "pickFolder": "Elegir carpeta",
     "browse": "Explorar",
     "folderPlaceholder": "Ninguna carpeta seleccionada",
-    "noFolders": "Añade al menos una carpeta."
+    "noFolders": "Añade al menos una carpeta.",
+    "keyHint": "Elige un proveedor y pega su clave. Puedes introducir varias — cambia de pestaña y cada clave se conserva."
   },
   "index": {
     "files": "{{count}} archivos indexados",

@@ -177,10 +177,19 @@ export default function App() {
           <LangToggle settings={settings} onChanged={(s) => setSettings(s)} />
           <ThemeToggle />
           <button
-            onClick={() => setShowSettings(true)}
-            className="grid h-[34px] w-[34px] place-items-center rounded-[9px] bg-fill-2 text-muted transition hover:bg-fill-hover hover:text-txt"
+            onClick={() => {
+              // now a screen, not a dialog: the gear toggles it
+              if (showSettings) refresh();
+              setShowSettings((open) => !open);
+            }}
+            className={`grid h-[34px] w-[34px] place-items-center rounded-[9px] transition ${
+              showSettings
+                ? "bg-accent/20 text-accent"
+                : "bg-fill-2 text-muted hover:bg-fill-hover hover:text-txt"
+            }`}
             title={t("app.settings")}
             aria-label={t("app.settings")}
+            aria-pressed={showSettings}
           >
             <svg
               width="17"
@@ -197,6 +206,15 @@ export default function App() {
         </div>
       </header>
 
+      {showSettings && settings ? (
+        <Settings
+          settings={settings}
+          onClose={() => {
+            setShowSettings(false);
+            refresh();
+          }}
+        />
+      ) : (
       <div ref={splitRef} className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
           <Chat onShowFile={showFile} />
@@ -222,21 +240,12 @@ export default function App() {
           <PreviewPane preview={preview} />
         </div>
       </div>
+      )}
 
       <footer className="flex flex-shrink-0 items-center justify-between border-t border-edge-soft bg-titlebar/25 px-5 py-1.5 text-[10.5px] font-medium text-muted-2">
         <span>DocFindy</span>
         <span>Made by G. Dall'Olmo</span>
       </footer>
-
-      {showSettings && settings && (
-        <Settings
-          settings={settings}
-          onClose={() => {
-            setShowSettings(false);
-            refresh();
-          }}
-        />
-      )}
     </div>
   );
 }
