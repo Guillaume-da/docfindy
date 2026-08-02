@@ -1,4 +1,5 @@
-//! Claude API client + agentic tool-use loop.
+//! Agentic tool-use loop, on top of whichever provider is configured
+//! (Claude, ChatGPT or Kimi — see [`crate::provider`]).
 //!
 //! Token budget kept low by design:
 //! - caveman-style system prompt (terse output, ~65% fewer output tokens)
@@ -9,9 +10,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::Emitter;
 
+use crate::provider::{self, Msg, Provider, ToolResult};
 use crate::{engine, rtk};
 
-const API_URL: &str = "https://api.anthropic.com/v1/messages";
 const MAX_TURNS: usize = 10;
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -286,84 +287,50 @@ async fn execute_tool(
 
 pub async fn agent_loop(
     app: &tauri::AppHandle,
+    prov: Provider,
     api_key: &str,
     model: &str,
     lang: &str,
     roots: &[String],
-    mut messages: Vec<Value>,
+    mut history: Vec<Msg>,
 ) -> Result<AgentResult, String> {
-    let client = reqwest::Client::new();
     let system = system_prompt(lang, roots);
+    let specs = provider::tool_specs(&tools());
     let mut shown: Vec<ShownFile> = vec![];
     let mut last_read: Option<String> = None;
     let mut final_text = String::new();
 
     for _ in 0..MAX_TURNS {
-        let body = json!({
-            "model": model,
-            "max_tokens": 1024,
-            "system": system,
-            "tools": tools(),
-            "messages": messages,
-        });
+        let turn =
+            provider::complete(prov, api_key, model, &system, &history, &specs, 1024).await?;
 
-        let resp = client
-            .post(API_URL)
-            .header("x-api-key", api_key)
-            .header("anthropic-version", "2023-06-01")
-            .header("content-type", "application/json")
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| format!("network: {e}"))?;
-
-        let status = resp.status();
-        let data: Value = resp.json().await.map_err(|e| e.to_string())?;
-        if !status.is_success() {
-            let msg = data["error"]["message"].as_str().unwrap_or("API error");
-            return Err(format!("Claude API {status}: {msg}"));
+        if !turn.text.trim().is_empty() {
+            final_text = turn.text.clone();
+        }
+        if turn.calls.is_empty() {
+            break;
         }
 
-        let content = data["content"].as_array().cloned().unwrap_or_default();
-        let stop = data["stop_reason"].as_str().unwrap_or("");
-
-        let mut text_parts: Vec<String> = vec![];
-        let mut tool_results: Vec<Value> = vec![];
-        for block in &content {
-            match block["type"].as_str() {
-                Some("text") => {
-                    if let Some(t) = block["text"].as_str() {
-                        text_parts.push(t.to_string());
-                    }
+        let mut results: Vec<ToolResult> = vec![];
+        for call in &turn.calls {
+            if call.name == "read_file" {
+                if let Some(p) = call.input["path"].as_str() {
+                    last_read = Some(p.to_string());
                 }
-                Some("tool_use") => {
-                    let name = block["name"].as_str().unwrap_or_default();
-                    let id = block["id"].as_str().unwrap_or_default();
-                    if name == "read_file" {
-                        if let Some(p) = block["input"]["path"].as_str() {
-                            last_read = Some(p.to_string());
-                        }
-                    }
-                    let result = execute_tool(app, name, &block["input"], &mut shown, roots).await;
-                    tool_results.push(json!({
-                        "type": "tool_result",
-                        "tool_use_id": id,
-                        "content": result,
-                    }));
-                }
-                _ => {}
             }
-        }
-        if !text_parts.is_empty() {
-            final_text = text_parts.join("\n");
+            let content = execute_tool(app, &call.name, &call.input, &mut shown, roots).await;
+            results.push(ToolResult {
+                id: call.id.clone(),
+                name: call.name.clone(),
+                content,
+            });
         }
 
-        if stop == "tool_use" && !tool_results.is_empty() {
-            messages.push(json!({"role": "assistant", "content": content}));
-            messages.push(json!({"role": "user", "content": tool_results}));
-            continue;
-        }
-        break;
+        history.push(Msg::Assistant {
+            text: turn.text,
+            calls: turn.calls,
+        });
+        history.push(Msg::ToolResults(results));
     }
 
     // Safety net: if the agent found and read a file but never called show_file
@@ -390,6 +357,7 @@ pub async fn agent_loop(
 /// One-shot document summary for the preview pane: a punchy TL;DR plus the
 /// main points. Returns `{"tldr": "...", "points": ["...", ...]}`.
 pub async fn summarize(
+    prov: Provider,
     api_key: &str,
     model: &str,
     lang: &str,
@@ -410,35 +378,16 @@ pub async fn summarize(
          \"points\": [\"3 to 6 key takeaways, each a short punchy phrase\"]}}. \
          {lang_line}"
     );
-    let client = reqwest::Client::new();
-    let body = json!({
-        "model": model,
-        "max_tokens": 600,
-        "system": system,
-        "messages": [{"role": "user", "content": format!("Document:\n\n{text}")}],
-    });
-    let resp = client
-        .post(API_URL)
-        .header("x-api-key", api_key)
-        .header("anthropic-version", "2023-06-01")
-        .header("content-type", "application/json")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("network: {e}"))?;
-
-    let status = resp.status();
-    let data: Value = resp.json().await.map_err(|e| e.to_string())?;
-    if !status.is_success() {
-        let msg = data["error"]["message"].as_str().unwrap_or("API error");
-        return Err(format!("Claude API {status}: {msg}"));
-    }
-
-    let raw = data["content"]
-        .as_array()
-        .and_then(|a| a.iter().find_map(|b| b["text"].as_str()))
-        .unwrap_or_default()
-        .trim();
+    let raw = provider::complete_text(
+        prov,
+        api_key,
+        model,
+        &system,
+        &format!("Document:\n\n{text}"),
+        600,
+    )
+    .await?;
+    let raw = raw.as_str();
     // tolerate ```json fences or stray prose around the JSON
     let start = raw.find('{');
     let end = raw.rfind('}');
@@ -453,6 +402,7 @@ pub async fn summarize(
 
 /// Answer a question about a single document. Returns `{"answer": "..."}`.
 pub async fn ask(
+    prov: Provider,
     api_key: &str,
     model: &str,
     lang: &str,
@@ -472,44 +422,22 @@ pub async fn ask(
          sentences). If the answer is not in the document, say so plainly. \
          {lang_line}"
     );
-    let client = reqwest::Client::new();
-    let body = json!({
-        "model": model,
-        "max_tokens": 500,
-        "system": system,
-        "messages": [{
-            "role": "user",
-            "content": format!("Document:\n\n{text}\n\n---\nQuestion: {question}")
-        }],
-    });
-    let resp = client
-        .post(API_URL)
-        .header("x-api-key", api_key)
-        .header("anthropic-version", "2023-06-01")
-        .header("content-type", "application/json")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("network: {e}"))?;
-
-    let status = resp.status();
-    let data: Value = resp.json().await.map_err(|e| e.to_string())?;
-    if !status.is_success() {
-        let msg = data["error"]["message"].as_str().unwrap_or("API error");
-        return Err(format!("Claude API {status}: {msg}"));
-    }
-    let answer = data["content"]
-        .as_array()
-        .and_then(|a| a.iter().find_map(|b| b["text"].as_str()))
-        .unwrap_or_default()
-        .trim()
-        .to_string();
+    let answer = provider::complete_text(
+        prov,
+        api_key,
+        model,
+        &system,
+        &format!("Document:\n\n{text}\n\n---\nQuestion: {question}"),
+        500,
+    )
+    .await?;
     Ok(json!({ "answer": answer }))
 }
 
 /// Expand a search query into related terms (synonyms + FR/EN translations)
 /// for smarter keyword search. Returns the term list (original included).
 pub async fn expand_query(
+    prov: Provider,
     api_key: &str,
     model: &str,
     query: &str,
@@ -522,34 +450,8 @@ pub async fn expand_query(
         a JSON array of 4 to 10 short search terms: the user's own key words, \
         close synonyms, and translations between French and English. Single \
         words or two-word phrases, lowercase. No explanations, no code fences.";
-    let client = reqwest::Client::new();
-    let body = json!({
-        "model": model,
-        "max_tokens": 300,
-        "system": system,
-        "messages": [{ "role": "user", "content": q }],
-    });
-    let resp = client
-        .post(API_URL)
-        .header("x-api-key", api_key)
-        .header("anthropic-version", "2023-06-01")
-        .header("content-type", "application/json")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("network: {e}"))?;
-
-    let status = resp.status();
-    let data: Value = resp.json().await.map_err(|e| e.to_string())?;
-    if !status.is_success() {
-        let msg = data["error"]["message"].as_str().unwrap_or("API error");
-        return Err(format!("Claude API {status}: {msg}"));
-    }
-    let raw = data["content"]
-        .as_array()
-        .and_then(|a| a.iter().find_map(|b| b["text"].as_str()))
-        .unwrap_or_default()
-        .trim();
+    let raw = provider::complete_text(prov, api_key, model, system, q, 300).await?;
+    let raw = raw.as_str();
     // parse the JSON array; fall back to the original query on any trouble
     let terms: Vec<String> = raw
         .find('[')

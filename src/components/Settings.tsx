@@ -6,7 +6,8 @@ import IndexProgress from "./IndexProgress";
 import LangToggle from "./LangToggle";
 import ThemeToggle from "./ThemeToggle";
 import { FolderIcon } from "./icons";
-import type { AppSettings, IndexStatus } from "../types";
+import { PROVIDERS, modelFor, providerInfo } from "../providers";
+import type { AppSettings, IndexStatus, ProviderId } from "../types";
 
 export default function Settings({
   settings,
@@ -23,6 +24,67 @@ export default function Settings({
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<IndexStatus | null>(null);
 
+  const [provider, setProvider] = useState<ProviderId>(settings.provider ?? "anthropic");
+  const [hasKey, setHasKey] = useState<Partial<Record<ProviderId, boolean>>>({});
+  const [model, setModel] = useState(() => modelFor(settings, settings.provider ?? "anthropic"));
+  const [models, setModels] = useState<string[]>([]);
+  const [modelsError, setModelsError] = useState<string | null>(null);
+  const [loadingModels, setLoadingModels] = useState(false);
+  const info = providerInfo(provider);
+
+  const loadKeys = useCallback(() => {
+    invoke<Record<ProviderId, boolean>>("provider_keys")
+      .then(setHasKey)
+      .catch(() => setHasKey({}));
+  }, []);
+
+  useEffect(loadKeys, [loadKeys]);
+
+  // Model ids come from the provider itself, so a line-up change does not need
+  // an app update. Without a key there is nothing to ask, hence the guard.
+  const loadModels = useCallback(
+    (id: ProviderId) => {
+      setModels([]);
+      setModelsError(null);
+      if (!hasKey[id]) return;
+      setLoadingModels(true);
+      invoke<string[]>("list_models", { provider: id })
+        .then(setModels)
+        .catch((e) => setModelsError(String(e)))
+        .finally(() => setLoadingModels(false));
+    },
+    [hasKey],
+  );
+
+  useEffect(() => loadModels(provider), [provider, loadModels]);
+
+  // save_settings merges shallowly, so the whole map is resent each time; keep
+  // it in state rather than reading back the stale `settings` prop.
+  const [modelMap, setModelMap] = useState<Partial<Record<ProviderId, string>>>(
+    () => settings.models ?? {},
+  );
+
+  async function persistModel(id: ProviderId, chosen: string, alsoProvider = false) {
+    const next = { ...modelMap, [id]: chosen };
+    setModelMap(next);
+    await invoke("save_settings", {
+      settings: alsoProvider ? { provider: id, models: next } : { models: next },
+    });
+  }
+
+  async function pickProvider(id: ProviderId) {
+    setProvider(id);
+    setApiKey("");
+    const next = modelFor({ ...settings, models: modelMap }, id);
+    setModel(next);
+    await persistModel(id, next, true);
+  }
+
+  async function pickModel(id: string) {
+    setModel(id);
+    await persistModel(provider, id);
+  }
+
   // What the index left out is only trustworthy if it is visible: without it,
   // a file missing from the results is indistinguishable from a bug.
   const loadStatus = useCallback(() => {
@@ -35,10 +97,11 @@ export default function Settings({
 
   async function saveKey() {
     if (!apiKey.trim()) return;
-    await invoke("set_api_key", { key: apiKey });
+    await invoke("set_api_key", { key: apiKey, provider });
     setApiKey("");
     setKeySaved(true);
     setTimeout(() => setKeySaved(false), 2000);
+    setHasKey((h) => ({ ...h, [provider]: true }));
   }
 
   async function addFolder() {
@@ -102,19 +165,83 @@ export default function Settings({
         <div className={sectionLabel}>{t("settings.connection")}</div>
         <div className={card}>
           <label className="mb-2 block text-[13px] font-semibold text-muted">
-            {t("settings.apiKey")}
+            {t("settings.provider")}
+          </label>
+          <div className="mb-4 flex gap-2">
+            {PROVIDERS.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => pickProvider(p.id)}
+                className={`flex-1 rounded-[11px] border px-3 py-2.5 text-[13px] font-semibold transition ${
+                  provider === p.id
+                    ? "border-accent bg-accent/15 text-txt-strong"
+                    : "border-edge bg-fill text-muted hover:bg-fill-hover hover:text-txt"
+                }`}
+              >
+                {p.label}
+                {hasKey[p.id] && <span className="ml-1.5 text-accent">•</span>}
+              </button>
+            ))}
+          </div>
+
+          <label className="mb-2 block text-[13px] font-semibold text-muted">
+            {t("settings.apiKeyFor", { provider: info.label })}
           </label>
           <div className="flex gap-2">
             <input
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              placeholder={t("settings.apiKeyPlaceholder")}
+              placeholder={hasKey[provider] ? t("settings.keyStored") : info.keyPlaceholder}
               className="flex-1 rounded-[11px] border border-edge bg-fill px-3.5 py-3 text-sm text-txt outline-none transition placeholder:text-muted-2 focus:bg-fill-2 focus:shadow-[0_0_0_3px_rgba(10,132,255,0.18)]"
             />
             <button onClick={saveKey} disabled={!apiKey.trim()} className={primaryBtn}>
               {keySaved ? "✓" : t("settings.save")}
             </button>
+          </div>
+          <button
+            onClick={() => invoke("open_provider_keys_page", { provider })}
+            className="mt-2 text-[12px] text-muted-2 underline-offset-2 transition hover:text-accent hover:underline"
+          >
+            {t("settings.getKey", { provider: info.label })}
+          </button>
+
+          <div className="mt-4 border-t border-edge-soft pt-4">
+            <label className="mb-2 block text-[13px] font-semibold text-muted">
+              {t("settings.model")}
+            </label>
+            {models.length > 0 ? (
+              <select
+                value={models.includes(model) ? model : ""}
+                onChange={(e) => pickModel(e.target.value)}
+                className="w-full rounded-[11px] border border-edge bg-fill px-3.5 py-3 text-sm text-txt outline-none transition focus:bg-fill-2"
+              >
+                {!models.includes(model) && <option value="">{model}</option>}
+                {models.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              // No key, or the list could not be fetched: a free-text field is
+              // the only thing that still lets the user name a model.
+              <input
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                onBlur={() => pickModel(model.trim() || info.defaultModel)}
+                className="w-full rounded-[11px] border border-edge bg-fill px-3.5 py-3 text-sm text-txt outline-none transition focus:bg-fill-2"
+              />
+            )}
+            <div className="mt-1.5 text-[12px] text-muted-2">
+              {loadingModels
+                ? t("settings.modelsLoading")
+                : modelsError
+                  ? t("settings.modelsError")
+                  : !hasKey[provider]
+                    ? t("settings.modelsNeedKey")
+                    : t("settings.modelsCount", { count: models.length })}
+            </div>
           </div>
         </div>
 

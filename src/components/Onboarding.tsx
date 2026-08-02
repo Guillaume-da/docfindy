@@ -6,7 +6,8 @@ import IndexProgress from "./IndexProgress";
 import LangToggle from "./LangToggle";
 import ThemeToggle from "./ThemeToggle";
 import { FolderIcon, LockIcon, SearchGlyph } from "./icons";
-import type { AppSettings } from "../types";
+import { PROVIDERS, providerInfo } from "../providers";
+import type { AppSettings, ProviderId } from "../types";
 
 export default function Onboarding({
   settings,
@@ -17,6 +18,7 @@ export default function Onboarding({
 }) {
   const { t } = useTranslation();
   const [apiKey, setApiKey] = useState("");
+  const [provider, setProvider] = useState<ProviderId>("anthropic");
   const [roots, setRoots] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,7 +39,13 @@ export default function Onboarding({
     setBusy(true);
     try {
       if (apiKey.trim()) {
-        await invoke("set_api_key", { key: apiKey });
+        await invoke("set_api_key", { key: apiKey, provider });
+        await invoke("save_settings", {
+          settings: {
+            provider,
+            models: { [provider]: providerInfo(provider).defaultModel },
+          },
+        });
       }
       await invoke("build_index", { paths: roots });
       onDone();
@@ -72,13 +80,28 @@ export default function Onboarding({
         <label className="mb-2 block text-[11.5px] font-semibold uppercase tracking-[0.05em] text-label">
           {t("onboarding.step1")}
         </label>
+        <div className="mb-2.5 flex gap-2">
+          {PROVIDERS.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => setProvider(p.id)}
+              className={`flex-1 rounded-[11px] border px-3 py-2 text-[13px] font-semibold transition ${
+                provider === p.id
+                  ? "border-accent bg-accent/15 text-txt-strong"
+                  : "border-edge bg-fill text-muted hover:bg-fill-hover hover:text-txt"
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
         <div className="relative mb-6 flex items-center">
           <LockIcon className="pointer-events-none absolute left-3.5 h-4 w-4 text-muted-2" />
           <input
             type="password"
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
-            placeholder={t("settings.apiKeyPlaceholder")}
+            placeholder={providerInfo(provider).keyPlaceholder}
             className="w-full rounded-[11px] border border-edge bg-fill py-3 pl-10 pr-3.5 text-sm text-txt outline-none transition placeholder:text-muted-2 focus:bg-fill-2 focus:shadow-[0_0_0_3px_rgba(10,132,255,0.18)]"
           />
         </div>

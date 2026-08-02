@@ -1,6 +1,6 @@
 # DocFindy
 
-Desktop file finder that searches **inside** your documents, not just their names. Type a word and it finds the PDF, Word file or note that contains it — instantly, locally, with no cloud upload. An optional Claude API key adds AI summaries, document Q&A and synonym-aware search.
+Desktop file finder that searches **inside** your documents, not just their names. Type a word and it finds the PDF, Word file or note that contains it — instantly, locally, with no cloud upload. An optional API key — Claude, ChatGPT or Kimi, your pick — adds AI summaries, document Q&A and synonym-aware search.
 
 ![DocFindy main window](docs/screenshots/search.png)
 
@@ -15,7 +15,7 @@ Desktop file finder that searches **inside** your documents, not just their name
 - **Keyboard-driven.** `↑`/`↓` to move through results, `Enter` to open the selected one.
 - **Light and dark themes**, plus a **trilingual UI** (English, Spanish and French), both switchable at runtime.
 
-With a Claude API key you also get: an on-demand AI summary of the previewed document, ask-a-question about the open document, and smart search that expands your query with synonyms and FR/EN translations before hitting the index.
+With an API key you also get: an on-demand AI summary of the previewed document, ask-a-question about the open document, and smart search that expands your query with synonyms and FR/EN translations before hitting the index.
 
 **The API key is optional.** Without it, indexing, search, preview and open all work; AI actions remain visible but ask you to configure a key when used.
 
@@ -61,9 +61,9 @@ npm run tauri build    # production bundle
 
 | Layer | Role |
 |-------|------|
-| **Tauri 2** (Rust) | App shell, Claude API client with a tool-use loop, OS keychain access, sidecar orchestration |
+| **Tauri 2** (Rust) | App shell, model-provider clients with a tool-use loop, OS keychain access, sidecar orchestration |
 | **docfindy-engine** (Python sidecar) | Walks the chosen roots, extracts text from pdf/docx/odt/plain files, maintains the SQLite FTS5 index. Only dependency: `pypdf` |
-| **rtk** (Rust sidecar) | [Rust Token Killer](https://github.com/rtk-ai/rtk) — compresses filesystem probe output before it enters the Claude context (60-90% fewer tokens) |
+| **rtk** (Rust sidecar) | [Rust Token Killer](https://github.com/rtk-ai/rtk) — compresses filesystem probe output before it enters the model context (60-90% fewer tokens) |
 | **caveman** | [Terse-output prompt rules](https://github.com/JuliusBrussee/caveman) baked into the agent system prompt (~65% fewer output tokens) |
 | **React 19 + Tailwind 4** | Search UI, rich preview pane, theme and EN/ES toggles |
 
@@ -107,8 +107,9 @@ DOCFINDY_ENGINE="/path/to/python /path/to/main.py" npm run tauri dev
 
 | What | Where |
 |------|-------|
-| API key | OS keychain (Windows Credential Manager, macOS Keychain, Secret Service), with a `0600` file fallback in the config dir for headless/WSL setups |
-| Settings | `<config>/com.guillaume.docfindy/settings.json` |
+| API keys | One per provider, in the OS keychain (Windows Credential Manager, macOS Keychain, Secret Service), with a `0600` file fallback in the config dir for headless/WSL setups |
+| Settings | `<config>/com.guillaume.docfindy/settings.json` — includes the chosen provider and a model per provider |
+| Endpoint override | `DOCFINDY_ANTHROPIC_BASE_URL`, `DOCFINDY_OPENAI_BASE_URL`, `DOCFINDY_KIMI_BASE_URL` — for `api.moonshot.cn` or an OpenAI-compatible gateway |
 | Index | `<data>/com.guillaume.docfindy/graphify-out/content.db` + `files.json` |
 
 On Linux that resolves to `~/.config/…` and `~/.local/share/…`; on Windows to `%APPDATA%`.
@@ -183,7 +184,8 @@ WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 npm run tauri
 engine/          Python indexing sidecar (main.py, engine.spec)
 src/             React frontend (components/, i18n/)
 src-tauri/src/   Rust core
-  claude.rs        Claude API client + tool-use loop
+  agent.rs         Tool-use loop and prompts, provider-agnostic
+  provider.rs      Claude / ChatGPT / Kimi clients (two wire formats)
   commands.rs      Tauri commands exposed to the frontend
   engine.rs        Sidecar resolution and execution
   migrate.rs       Pre-rename data migration
