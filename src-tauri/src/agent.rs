@@ -85,7 +85,11 @@ Style rules (strict):
 - Keep all technical substance: paths, filenames, sizes exact and verbatim.
 - Answer pattern: [file found] [path] [why it matches]. Nothing more.
 - Never narrate tool calls. Never apologize."#,
-        roots = if roots.is_empty() { "(none yet)".to_string() } else { roots.join(", ") },
+        roots = if roots.is_empty() {
+            "(none yet)".to_string()
+        } else {
+            roots.join(", ")
+        },
         lang_line = lang_line,
     )
 }
@@ -216,9 +220,13 @@ async fn execute_tool(
     match name {
         "doc_search" => {
             let args = vec![
-                "fts".into(), "--out".into(), out_dir,
-                "--query".into(), input["query"].as_str().unwrap_or_default().to_string(),
-                "--limit".into(), input["limit"].as_u64().unwrap_or(10).to_string(),
+                "fts".into(),
+                "--out".into(),
+                out_dir,
+                "--query".into(),
+                input["query"].as_str().unwrap_or_default().to_string(),
+                "--limit".into(),
+                input["limit"].as_u64().unwrap_or(10).to_string(),
             ];
             match engine::run(app, &args, false).await {
                 Ok(v) => serde_json::to_string(&v).unwrap_or_default(),
@@ -241,8 +249,11 @@ async fn execute_tool(
             };
             let max_chars = input["max_chars"].as_u64().unwrap_or(20_000).to_string();
             let args = vec![
-                "text".into(), "--path".into(), path,
-                "--max-chars".into(), max_chars,
+                "text".into(),
+                "--path".into(),
+                path,
+                "--max-chars".into(),
+                max_chars,
             ];
             match engine::run(app, &args, false).await {
                 Ok(v) => v["text"].as_str().unwrap_or_default().to_string(),
@@ -251,9 +262,13 @@ async fn execute_tool(
         }
         "content_search" => {
             let mut args = vec![
-                "search".into(), "--out".into(), out_dir,
-                "--needle".into(), input["needle"].as_str().unwrap_or_default().to_string(),
-                "--limit".into(), input["limit"].as_u64().unwrap_or(20).to_string(),
+                "search".into(),
+                "--out".into(),
+                out_dir,
+                "--needle".into(),
+                input["needle"].as_str().unwrap_or_default().to_string(),
+                "--limit".into(),
+                input["limit"].as_u64().unwrap_or(20).to_string(),
             ];
             if let Some(p) = input["path"].as_str() {
                 args.push("--path".into());
@@ -279,7 +294,11 @@ async fn execute_tool(
                 let _ = app.emit("show-file", &f);
             }
             shown.push(f.clone());
-            if f.exists { "offered".into() } else { format!("file not found: {path}") }
+            if f.exists {
+                "offered".into()
+            } else {
+                format!("file not found: {path}")
+            }
         }
         _ => format!("unknown tool: {name}"),
     }
@@ -351,7 +370,10 @@ pub async fn agent_loop(
         }
     }
 
-    Ok(AgentResult { text: final_text, shown })
+    Ok(AgentResult {
+        text: final_text,
+        shown,
+    })
 }
 
 /// One-shot document summary for the preview pane: a punchy TL;DR plus the
@@ -392,9 +414,7 @@ pub async fn summarize(
     let start = raw.find('{');
     let end = raw.rfind('}');
     let parsed = match (start, end) {
-        (Some(s), Some(e)) if e > s => {
-            serde_json::from_str::<Value>(&raw[s..=e]).ok()
-        }
+        (Some(s), Some(e)) if e > s => serde_json::from_str::<Value>(&raw[s..=e]).ok(),
         _ => None,
     };
     Ok(parsed.unwrap_or_else(|| json!({ "tldr": raw, "points": [] })))

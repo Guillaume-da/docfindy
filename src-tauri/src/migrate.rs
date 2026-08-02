@@ -53,7 +53,10 @@ fn migrate_dir(old: &Path, new: &Path) {
     // instead, keeping anything the new location already has.
     if !merge_into(old, new) {
         // Leave the old directory alone so the data stays recoverable.
-        eprintln!("migration incomplete for {}, old data left in place", old.display());
+        eprintln!(
+            "migration incomplete for {}, old data left in place",
+            old.display()
+        );
         return;
     }
     // Every entry either moved or already had a counterpart under the new

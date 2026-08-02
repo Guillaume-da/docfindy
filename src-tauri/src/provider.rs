@@ -168,25 +168,29 @@ fn encode_tools(provider: Provider, specs: &[ToolSpec]) -> Value {
         Value::Array(
             specs
                 .iter()
-                .map(|s| json!({
-                    "name": s.name,
-                    "description": s.description,
-                    "input_schema": s.schema,
-                }))
+                .map(|s| {
+                    json!({
+                        "name": s.name,
+                        "description": s.description,
+                        "input_schema": s.schema,
+                    })
+                })
                 .collect(),
         )
     } else {
         Value::Array(
             specs
                 .iter()
-                .map(|s| json!({
-                    "type": "function",
-                    "function": {
-                        "name": s.name,
-                        "description": s.description,
-                        "parameters": s.schema,
-                    },
-                }))
+                .map(|s| {
+                    json!({
+                        "type": "function",
+                        "function": {
+                            "name": s.name,
+                            "description": s.description,
+                            "parameters": s.schema,
+                        },
+                    })
+                })
                 .collect(),
         )
     }
@@ -230,14 +234,16 @@ fn encode_messages(provider: Provider, system: &str, history: &[Msg]) -> Vec<Val
                         msg["tool_calls"] = Value::Array(
                             calls
                                 .iter()
-                                .map(|c| json!({
-                                    "id": c.id,
-                                    "type": "function",
-                                    "function": {
-                                        "name": c.name,
-                                        "arguments": c.input.to_string(),
-                                    },
-                                }))
+                                .map(|c| {
+                                    json!({
+                                        "id": c.id,
+                                        "type": "function",
+                                        "function": {
+                                            "name": c.name,
+                                            "arguments": c.input.to_string(),
+                                        },
+                                    })
+                                })
                                 .collect(),
                         );
                     }
@@ -307,7 +313,10 @@ fn parse_turn(provider: Provider, data: &Value) -> Turn {
                 a.iter()
                     .map(|c| ToolCall {
                         id: c["id"].as_str().unwrap_or_default().to_string(),
-                        name: c["function"]["name"].as_str().unwrap_or_default().to_string(),
+                        name: c["function"]["name"]
+                            .as_str()
+                            .unwrap_or_default()
+                            .to_string(),
                         // arguments arrive as a JSON *string*; a model can emit
                         // malformed JSON there, so fall back to an empty object
                         // rather than failing the whole turn.
@@ -344,11 +353,15 @@ pub async fn complete(
     max_tokens: u32,
 ) -> Result<Turn, String> {
     let client = reqwest::Client::new();
-    let url = format!("{}/{}", provider.base_url(), if provider.anthropic_wire() {
-        "messages"
-    } else {
-        "chat/completions"
-    });
+    let url = format!(
+        "{}/{}",
+        provider.base_url(),
+        if provider.anthropic_wire() {
+            "messages"
+        } else {
+            "chat/completions"
+        }
+    );
     let messages = encode_messages(provider, system, history);
 
     let mut body = json!({
@@ -514,8 +527,16 @@ mod tests {
     #[test]
     fn openai_tool_results_become_one_message_each() {
         let history = vec![Msg::ToolResults(vec![
-            ToolResult { id: "a".into(), name: "doc_search".into(), content: "1".into() },
-            ToolResult { id: "b".into(), name: "read_file".into(), content: "2".into() },
+            ToolResult {
+                id: "a".into(),
+                name: "doc_search".into(),
+                content: "1".into(),
+            },
+            ToolResult {
+                id: "b".into(),
+                name: "read_file".into(),
+                content: "2".into(),
+            },
         ])];
         let out = encode_messages(Provider::OpenAi, "sys", &history);
         // system + one message per tool result
@@ -528,8 +549,16 @@ mod tests {
     #[test]
     fn anthropic_tool_results_ride_in_one_user_message() {
         let history = vec![Msg::ToolResults(vec![
-            ToolResult { id: "a".into(), name: "doc_search".into(), content: "1".into() },
-            ToolResult { id: "b".into(), name: "read_file".into(), content: "2".into() },
+            ToolResult {
+                id: "a".into(),
+                name: "doc_search".into(),
+                content: "1".into(),
+            },
+            ToolResult {
+                id: "b".into(),
+                name: "read_file".into(),
+                content: "2".into(),
+            },
         ])];
         let out = encode_messages(Provider::Anthropic, "sys", &history);
         assert_eq!(out.len(), 1);
@@ -544,10 +573,18 @@ mod tests {
             name: "doc_search".into(),
             input: json!({"query": "facture", "limit": 5}),
         }];
-        let history = vec![Msg::Assistant { text: String::new(), calls }];
+        let history = vec![Msg::Assistant {
+            text: String::new(),
+            calls,
+        }];
         let out = encode_messages(Provider::OpenAi, "", &history);
-        let args = out[0]["tool_calls"][0]["function"]["arguments"].as_str().unwrap();
-        assert_eq!(serde_json::from_str::<Value>(args).unwrap()["query"], "facture");
+        let args = out[0]["tool_calls"][0]["function"]["arguments"]
+            .as_str()
+            .unwrap();
+        assert_eq!(
+            serde_json::from_str::<Value>(args).unwrap()["query"],
+            "facture"
+        );
         assert!(out[0]["content"].is_null());
     }
 
