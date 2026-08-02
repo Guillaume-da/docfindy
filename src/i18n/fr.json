@@ -88,7 +88,7 @@
     "index": "Index",
     "appearance": "Apparence",
     "theme": "Thème",
-    "version": "Version 0.2.0",
+    "version": "Version {{version}}",
     "language": "Langue",
     "folders": "Dossiers indexés",
     "addFolder": "Ajouter un dossier",

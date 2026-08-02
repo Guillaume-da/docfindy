@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { getVersion } from "@tauri-apps/api/app";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
 import IndexProgress from "./IndexProgress";
@@ -31,6 +32,16 @@ export default function Settings({
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [loadingModels, setLoadingModels] = useState(false);
   const info = providerInfo(provider);
+
+  // Read from the running app rather than a literal: the footer previously
+  // claimed "Version 1.0", a number this app never carried, because nothing
+  // made it move when the real version did.
+  const [version, setVersion] = useState<string | null>(null);
+  useEffect(() => {
+    getVersion()
+      .then(setVersion)
+      .catch(() => setVersion(null));
+  }, []);
 
   const loadKeys = useCallback(() => {
     invoke<Record<ProviderId, boolean>>("provider_keys")
@@ -345,7 +356,7 @@ export default function Settings({
 
         <div className="pt-1 text-center">
           <div className="text-[13px] font-semibold text-muted">
-            DocFindy — {t("settings.version")}
+            {version ? `DocFindy — ${t("settings.version", { version })}` : "DocFindy"}
           </div>
           <div className="mt-0.5 text-xs text-muted-2">Made by G. Dall'Olmo</div>
         </div>
