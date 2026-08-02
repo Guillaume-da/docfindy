@@ -192,8 +192,19 @@ An unsigned installer is awkward to hand to anyone: Windows shows "Unknown publi
 To turn it on:
 
 1. Apply for the SignPath open-source plan and install the **SignPath GitHub App** on this repository. It verifies that the artifact came from a GitHub-hosted runner in this repo, which is what lets them sign without reviewing every build by hand.
-2. In SignPath, create a project, an artifact configuration, and two signing policies — one for test signing, one for release signing.
-3. Add these **repository variables** (Settings → Secrets and variables → Actions → Variables):
+2. In SignPath, create a project and two signing policies — one for test signing, one for release signing.
+3. Set the artifact configuration. The workflow uploads a GitHub artifact, which is a **zip** containing the installer, so the configuration has to descend into it. The wildcard means it does not need editing at each version, and `max-matches` defaults to 1, which is what we want — one installer per build:
+
+   ```xml
+   <artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+     <zip-file>
+       <pe-file path="DocFindy_*_x64-setup.exe">
+         <authenticode-sign />
+       </pe-file>
+     </zip-file>
+   </artifact-configuration>
+   ```
+4. Add these **repository variables** (Settings → Secrets and variables → Actions → Variables):
 
    | Variable | Value |
    |----------|-------|
@@ -203,7 +214,22 @@ To turn it on:
    | `SIGNPATH_RELEASE_POLICY_SLUG` | release signing policy |
    | `SIGNPATH_TEST_POLICY_SLUG` | test signing policy |
 
-4. Add one **secret**: `SIGNPATH_API_TOKEN`.
+5. Add one **secret**: `SIGNPATH_API_TOKEN`.
+
+   ```bash
+   gh variable set SIGNPATH_ORGANIZATION_ID     --body '…' --repo Guillaume-da/docfindy
+   gh variable set SIGNPATH_PROJECT_SLUG        --body '…' --repo Guillaume-da/docfindy
+   gh variable set SIGNPATH_ARTIFACT_CONFIG_SLUG --body '…' --repo Guillaume-da/docfindy
+   gh variable set SIGNPATH_RELEASE_POLICY_SLUG --body '…' --repo Guillaume-da/docfindy
+   gh variable set SIGNPATH_TEST_POLICY_SLUG    --body '…' --repo Guillaume-da/docfindy
+   gh secret   set SIGNPATH_API_TOKEN           --repo Guillaume-da/docfindy
+   ```
+
+Check it with a manual dispatch before tagging: that signs with the test policy, so a misconfiguration cannot spend a release signature.
+
+```bash
+gh workflow run build-windows.yml --ref main
+```
 
 The job keys off `SIGNPATH_ORGANIZATION_ID` being set. A `v*` tag signs with the release policy and attaches the signed installer plus `SHA256SUMS.txt` to the release; a manual dispatch signs with the test policy, so a dry run cannot spend a release signature.
 
