@@ -235,6 +235,11 @@ export function convertFileSrc(path: string): string {
   return path;
 }
 
+/** Stands in for @tauri-apps/api/app outside the Tauri shell. */
+export async function getVersion(): Promise<string> {
+  return __APP_VERSION__;
+}
+
 export async function listen<T>(_event: string, _cb: (e: { payload: T }) => void): Promise<() => void> {
   return () => {};
 }

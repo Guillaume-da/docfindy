@@ -88,7 +88,7 @@
     "index": "Índice",
     "appearance": "Apariencia",
     "theme": "Tema",
-    "version": "Version 0.2.0",
+    "version": "Version {{version}}",
     "language": "Idioma",
     "folders": "Carpetas indexadas",
     "addFolder": "Añadir carpeta",
