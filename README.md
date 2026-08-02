@@ -45,9 +45,9 @@ Dark by default, light on demand — the toggle sits next to the language switch
 
 ### Windows
 
-No release has been published yet. In the meantime, build the installer yourself by pushing a `v*` tag or running the [build-windows workflow](../../actions/workflows/build-windows.yml) manually, then grab the `docfindy-windows-installer` artifact. Everything is bundled — no Python or Rust needed on the target machine.
+Grab the installer from the [releases page](https://github.com/Guillaume-da/docfindy/releases). Windows 10 or 11, **x64 only**. Everything is bundled — no Python or Rust needed on the target machine. If the WebView2 runtime is missing, the installer fetches it, so that step needs a connection; Windows 11 ships it already.
 
-Once a release exists, it will be on the [releases page](https://github.com/Guillaume-da/docfindy/releases).
+Builds are **not yet code-signed**, so Windows reports "Unknown publisher" and SmartScreen may block the download — *More info → Run anyway*. Each release carries a SHA-256 checksum if you want to verify what you downloaded. See [Signing the Windows installer](#signing-the-windows-installer) for how this gets fixed.
 
 ### Build from source
 
@@ -182,6 +182,30 @@ privately through GitHub Security Advisories rather than in a public issue.
 3. The NSIS installer — `tauri build`
 
 Artifact: `docfindy-windows-installer`.
+
+### Signing the Windows installer
+
+An unsigned installer is awkward to hand to anyone: Windows shows "Unknown publisher" and SmartScreen blocks it, which looks identical to something actually being wrong. A self-signed certificate does not help — it is only an authority on machines that have been told to trust it, so for a third party it is no better than no signature at all.
+
+[SignPath](https://about.signpath.io/product/open-source) issues certificates and signs builds free of charge for open-source projects. The `sign` job in `build-windows.yml` is already wired for it and **skips itself until the repository is enrolled**, so the build keeps working meanwhile.
+
+To turn it on:
+
+1. Apply for the SignPath open-source plan and install the **SignPath GitHub App** on this repository. It verifies that the artifact came from a GitHub-hosted runner in this repo, which is what lets them sign without reviewing every build by hand.
+2. In SignPath, create a project, an artifact configuration, and two signing policies — one for test signing, one for release signing.
+3. Add these **repository variables** (Settings → Secrets and variables → Actions → Variables):
+
+   | Variable | Value |
+   |----------|-------|
+   | `SIGNPATH_ORGANIZATION_ID` | your SignPath organization id |
+   | `SIGNPATH_PROJECT_SLUG` | the project slug |
+   | `SIGNPATH_ARTIFACT_CONFIG_SLUG` | usually `default artifact configuration` |
+   | `SIGNPATH_RELEASE_POLICY_SLUG` | release signing policy |
+   | `SIGNPATH_TEST_POLICY_SLUG` | test signing policy |
+
+4. Add one **secret**: `SIGNPATH_API_TOKEN`.
+
+The job keys off `SIGNPATH_ORGANIZATION_ID` being set. A `v*` tag signs with the release policy and attaches the signed installer plus `SHA256SUMS.txt` to the release; a manual dispatch signs with the test policy, so a dry run cannot spend a release signature.
 
 ## Troubleshooting
 
