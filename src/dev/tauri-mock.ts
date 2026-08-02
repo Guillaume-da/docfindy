@@ -157,7 +157,14 @@ function match(query: string) {
   );
 }
 
-const settings = { lang: "en", roots: [HOME], model: "claude-sonnet-5" };
+const settings = {
+  lang: "en",
+  roots: [HOME],
+  provider: "anthropic",
+  models: { anthropic: "claude-sonnet-5" },
+};
+
+const FRESH = new URLSearchParams(location.search).get("mock") === "fresh";
 
 const delay = <T,>(v: T, ms = 120) => new Promise<T>((r) => setTimeout(() => r(v), ms));
 
@@ -167,8 +174,26 @@ export async function invoke<T = unknown>(cmd: string, args?: Record<string, unk
       return delay(settings as T);
     case "has_api_key":
       return delay(true as T);
+    case "provider_keys":
+      return delay({ anthropic: true, openai: false, kimi: false } as T);
+    case "list_models":
+      return delay(
+        (args?.provider === "openai"
+          ? ["gpt-4.1", "gpt-4.1-mini", "gpt-4o"]
+          : args?.provider === "kimi"
+            ? ["kimi-latest", "moonshot-v1-128k"]
+            : ["claude-sonnet-5", "claude-opus-5", "claude-haiku-4-5-20251001"]) as T,
+      );
+    case "open_provider_keys_page":
+      return delay(undefined as T);
     case "index_status":
-      return delay({ exists: true, files: 2174, roots: settings.roots } as T);
+      // ?mock=fresh reproduces a first run, so the onboarding screen can be
+      // reached (and screenshotted) without clearing anything.
+      return delay(
+        (FRESH
+          ? { exists: false }
+          : { exists: true, files: 2174, roots: settings.roots }) as T,
+      );
     case "quick_search":
     case "smart_search": {
       const q = String((args?.query as string) ?? "");

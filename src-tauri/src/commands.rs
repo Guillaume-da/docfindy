@@ -4,7 +4,8 @@ use std::fs;
 use std::path::PathBuf;
 use tauri::Manager;
 
-use crate::{claude, engine, secrets};
+use crate::provider::{Msg, Provider};
+use crate::{agent, engine, provider, secrets};
 
 fn settings_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
@@ -17,7 +18,43 @@ fn load_settings(app: &tauri::AppHandle) -> Value {
         .ok()
         .and_then(|p| fs::read_to_string(p).ok())
         .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_else(|| json!({"lang": "en", "roots": [], "model": "claude-sonnet-5"}))
+        .unwrap_or_else(|| json!({
+            "lang": "en",
+            "roots": [],
+            "provider": Provider::Anthropic.id(),
+            "model": Provider::Anthropic.default_model(),
+        }))
+}
+
+/// The configured provider, and the model to use with it.
+///
+/// `model` is stored per provider (`models: {anthropic: "…", openai: "…"}`) so
+/// switching back and forth does not lose the previous choice. The flat
+/// `model` key written by older versions is still honoured for Anthropic.
+fn provider_and_model(settings: &Value) -> (Provider, String) {
+    let prov = Provider::from_id(settings["provider"].as_str().unwrap_or("anthropic"));
+    let per_provider = settings["models"][prov.id()].as_str();
+    let legacy = if prov == Provider::Anthropic {
+        settings["model"].as_str()
+    } else {
+        None
+    };
+    let model = per_provider
+        .or(legacy)
+        .map(str::trim)
+        .filter(|m| !m.is_empty())
+        .unwrap_or(prov.default_model())
+        .to_string();
+    (prov, model)
+}
+
+/// Provider + key + model for a command that needs to call the API.
+/// Errors with `no_api_key`, which the UI turns into "set up your key".
+fn ai_context(app: &tauri::AppHandle) -> Result<(Provider, String, String, Value), String> {
+    let settings = load_settings(app);
+    let (prov, model) = provider_and_model(&settings);
+    let key = secrets::get(app, prov).ok_or("no_api_key")?;
+    Ok((prov, key, model, settings))
 }
 
 #[tauri::command]
@@ -59,17 +96,66 @@ fn ensure_in_roots(app: &tauri::AppHandle, path: &str) -> Result<(), String> {
         .as_array()
         .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
         .unwrap_or_default();
-    claude::resolve_in_roots(path, &roots).map(|_| ())
+    agent::resolve_in_roots(path, &roots).map(|_| ())
 }
 
+/// Store a key. `provider` is optional so the onboarding flow, which only
+/// deals with Claude, can keep calling this with just a key.
 #[tauri::command]
-pub fn set_api_key(app: tauri::AppHandle, key: String) -> Result<(), String> {
-    secrets::set(&app, key.trim())
+pub fn set_api_key(
+    app: tauri::AppHandle,
+    key: String,
+    provider: Option<String>,
+) -> Result<(), String> {
+    let prov = Provider::from_id(provider.as_deref().unwrap_or("anthropic"));
+    secrets::set(&app, prov, key.trim())
 }
 
+/// Whether a key is stored — for the configured provider by default, or for
+/// the named one.
 #[tauri::command]
-pub fn has_api_key(app: tauri::AppHandle) -> bool {
-    secrets::get(&app).is_some()
+pub fn has_api_key(app: tauri::AppHandle, provider: Option<String>) -> bool {
+    let prov = match provider {
+        Some(p) => Provider::from_id(&p),
+        None => provider_and_model(&load_settings(&app)).0,
+    };
+    secrets::get(&app, prov).is_some()
+}
+
+/// Which providers already have a key, so Settings can show it at a glance.
+#[tauri::command]
+pub fn provider_keys(app: tauri::AppHandle) -> Value {
+    json!({
+        "anthropic": secrets::get(&app, Provider::Anthropic).is_some(),
+        "openai": secrets::get(&app, Provider::OpenAi).is_some(),
+        "kimi": secrets::get(&app, Provider::Kimi).is_some(),
+    })
+}
+
+/// Open the provider's API-key page. Takes a provider id, never a URL: the
+/// destination is a constant on the Rust side.
+#[tauri::command]
+pub fn open_provider_keys_page(app: tauri::AppHandle, provider: String) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let url = Provider::from_id(&provider).key_url();
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|e| e.to_string())
+}
+
+/// Model ids the stored key can use. Asked of the provider rather than
+/// hardcoded, so a new model is selectable the day it ships.
+#[tauri::command]
+pub async fn list_models(
+    app: tauri::AppHandle,
+    provider: Option<String>,
+) -> Result<Vec<String>, String> {
+    let prov = match provider {
+        Some(p) => Provider::from_id(&p),
+        None => provider_and_model(&load_settings(&app)).0,
+    };
+    let key = secrets::get(&app, prov).ok_or("no_api_key")?;
+    provider::list_models(prov, &key).await
 }
 
 #[tauri::command]
@@ -164,10 +250,8 @@ pub async fn smart_search(
     if q.is_empty() {
         return Ok(json!({ "hits": [], "expanded": [] }));
     }
-    let api_key = secrets::get(&app).ok_or("no_api_key")?;
-    let settings = load_settings(&app);
-    let model = settings["model"].as_str().unwrap_or("claude-sonnet-5").to_string();
-    let terms = claude::expand_query(&api_key, &model, q).await?;
+    let (prov, api_key, model, _) = ai_context(&app)?;
+    let terms = agent::expand_query(prov, &api_key, &model, q).await?;
     let out = engine::index_dir(&app)?.to_string_lossy().into_owned();
     let args: Vec<String> = vec![
         "fts".into(), "--out".into(), out,
@@ -188,20 +272,18 @@ pub async fn summarize_file(
     lang: Option<String>,
 ) -> Result<Value, String> {
     ensure_in_roots(&app, &path)?;
-    let api_key = secrets::get(&app).ok_or("no_api_key")?;
-    let settings = load_settings(&app);
+    let (prov, api_key, model, settings) = ai_context(&app)?;
     // caller passes the UI's current language so the summary follows the toggle
     let lang = lang
         .filter(|l| !l.trim().is_empty())
         .unwrap_or_else(|| settings["lang"].as_str().unwrap_or("en").to_string());
-    let model = settings["model"].as_str().unwrap_or("claude-sonnet-5").to_string();
     let text_args: Vec<String> = vec![
         "text".into(), "--path".into(), path,
         "--max-chars".into(), "12000".into(),
     ];
     let v = engine::run(&app, &text_args, false).await?;
     let text = v["text"].as_str().unwrap_or_default();
-    claude::summarize(&api_key, &model, &lang, text).await
+    agent::summarize(prov, &api_key, &model, &lang, text).await
 }
 
 /// Answer a question about the previewed document: `{answer}`. Needs the key.
@@ -213,19 +295,17 @@ pub async fn ask_document(
     lang: Option<String>,
 ) -> Result<Value, String> {
     ensure_in_roots(&app, &path)?;
-    let api_key = secrets::get(&app).ok_or("no_api_key")?;
-    let settings = load_settings(&app);
+    let (prov, api_key, model, settings) = ai_context(&app)?;
     let lang = lang
         .filter(|l| !l.trim().is_empty())
         .unwrap_or_else(|| settings["lang"].as_str().unwrap_or("en").to_string());
-    let model = settings["model"].as_str().unwrap_or("claude-sonnet-5").to_string();
     let text_args: Vec<String> = vec![
         "text".into(), "--path".into(), path,
         "--max-chars".into(), "12000".into(),
     ];
     let v = engine::run(&app, &text_args, false).await?;
     let text = v["text"].as_str().unwrap_or_default();
-    claude::ask(&api_key, &model, &lang, text, &question).await
+    agent::ask(prov, &api_key, &model, &lang, text, &question).await
 }
 
 #[derive(Deserialize)]
@@ -236,21 +316,28 @@ pub struct ChatMsg {
 
 #[tauri::command]
 pub async fn chat(app: tauri::AppHandle, messages: Vec<ChatMsg>) -> Result<Value, String> {
-    let api_key = secrets::get(&app).ok_or("no_api_key")?;
-    let settings = load_settings(&app);
+    let (prov, api_key, model, settings) = ai_context(&app)?;
     let lang = settings["lang"].as_str().unwrap_or("en").to_string();
-    let model = settings["model"].as_str().unwrap_or("claude-sonnet-5").to_string();
     let roots: Vec<String> = settings["roots"]
         .as_array()
         .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
         .unwrap_or_default();
 
-    let api_messages: Vec<Value> = messages
+    // Prior turns replay as plain text on both sides: the tool calls that
+    // produced them are not kept in the transcript the webview sends back.
+    let history: Vec<Msg> = messages
         .iter()
-        .map(|m| json!({"role": m.role, "content": m.content}))
+        .map(|m| {
+            if m.role == "assistant" {
+                Msg::Assistant { text: m.content.clone(), calls: vec![] }
+            } else {
+                Msg::User(m.content.clone())
+            }
+        })
         .collect();
 
-    let result = claude::agent_loop(&app, &api_key, &model, &lang, &roots, api_messages).await?;
+    let result =
+        agent::agent_loop(&app, prov, &api_key, &model, &lang, &roots, history).await?;
     Ok(json!({"text": result.text, "shown": result.shown}))
 }
 

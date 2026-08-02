@@ -1,6 +1,6 @@
 # DocFindy
 
-Desktop file finder that searches **inside** your documents, not just their names. Type a word and it finds the PDF, Word file or note that contains it — instantly, locally, with no cloud upload. An optional Claude API key adds AI summaries, document Q&A and synonym-aware search.
+Desktop file finder that searches **inside** your documents, not just their names. Type a word and it finds the PDF, Word file or note that contains it — instantly, locally, with no cloud upload. An optional API key — Claude, ChatGPT or Kimi, your pick — adds AI summaries, document Q&A and synonym-aware search.
 
 ![DocFindy main window](docs/screenshots/search.png)
 
@@ -15,7 +15,9 @@ Desktop file finder that searches **inside** your documents, not just their name
 - **Keyboard-driven.** `↑`/`↓` to move through results, `Enter` to open the selected one.
 - **Light and dark themes**, plus a **trilingual UI** (English, Spanish and French), both switchable at runtime.
 
-With a Claude API key you also get: an on-demand AI summary of the previewed document, ask-a-question about the open document, and smart search that expands your query with synonyms and FR/EN translations before hitting the index.
+With an API key you also get: an on-demand AI summary of the previewed document, ask-a-question about the open document, and smart search that expands your query with synonyms and FR/EN translations before hitting the index.
+
+**Bring your own provider.** Claude, ChatGPT or Kimi — pick one in Settings and paste that provider's key. Each key is stored separately, so switching provider does not make you re-enter the other one. The model list is fetched from the provider itself, so a newly released model is selectable without waiting for a DocFindy update.
 
 **The API key is optional.** Without it, indexing, search, preview and open all work; AI actions remain visible but ask you to configure a key when used.
 
@@ -26,6 +28,12 @@ With a Claude API key you also get: an on-demand AI summary of the previewed doc
 Pick the folders to index. The API key field can be left empty.
 
 ![Onboarding screen](docs/screenshots/onboarding.png)
+
+### Settings
+
+Choose the AI provider, store its key, and pick a model from the list the provider reports.
+
+![Settings panel](docs/screenshots/settings.png)
 
 ### Light theme
 
@@ -61,16 +69,27 @@ npm run tauri build    # production bundle
 
 | Layer | Role |
 |-------|------|
-| **Tauri 2** (Rust) | App shell, Claude API client with a tool-use loop, OS keychain access, sidecar orchestration |
+| **Tauri 2** (Rust) | App shell, model-provider clients with a tool-use loop, OS keychain access, sidecar orchestration |
 | **docfindy-engine** (Python sidecar) | Walks the chosen roots, extracts text from pdf/docx/odt/plain files, maintains the SQLite FTS5 index. Only dependency: `pypdf` |
-| **rtk** (Rust sidecar) | [Rust Token Killer](https://github.com/rtk-ai/rtk) — compresses filesystem probe output before it enters the Claude context (60-90% fewer tokens) |
+| **rtk** (Rust sidecar) | [Rust Token Killer](https://github.com/rtk-ai/rtk) — compresses filesystem probe output before it enters the model context (60-90% fewer tokens) |
 | **caveman** | [Terse-output prompt rules](https://github.com/JuliusBrussee/caveman) baked into the agent system prompt (~65% fewer output tokens) |
-| **React 19 + Tailwind 4** | Search UI, rich preview pane, theme and EN/ES toggles |
+| **React 19 + Tailwind 4** | Search UI, rich preview pane, theme and EN/ES/FR toggles |
 
 The frontend can also run standalone in a browser: `src/dev/tauri-mock.ts` stubs the Tauri commands with sample data, which is handy for UI work without a Rust rebuild.
 
 ```bash
 VITE_MOCK=1 npm run dev
+```
+
+Add `?mock=fresh` to the URL to get the first-run state (empty index) instead of
+the seeded one.
+
+The screenshots in this README are regenerated from that mocked UI, through
+WebKitGTK — the engine the Linux build ships with, so they show the real thing:
+
+```bash
+VITE_MOCK=1 npm run dev              # terminal 1
+python3 docs/screenshots/capture.py  # terminal 2
 ```
 
 ### Agent tools
@@ -107,8 +126,9 @@ DOCFINDY_ENGINE="/path/to/python /path/to/main.py" npm run tauri dev
 
 | What | Where |
 |------|-------|
-| API key | OS keychain (Windows Credential Manager, macOS Keychain, Secret Service), with a `0600` file fallback in the config dir for headless/WSL setups |
-| Settings | `<config>/com.guillaume.docfindy/settings.json` |
+| API keys | One per provider, in the OS keychain (Windows Credential Manager, macOS Keychain, Secret Service), with a `0600` file fallback in the config dir for headless/WSL setups |
+| Settings | `<config>/com.guillaume.docfindy/settings.json` — includes the chosen provider and a model per provider |
+| Endpoint override | `DOCFINDY_ANTHROPIC_BASE_URL`, `DOCFINDY_OPENAI_BASE_URL`, `DOCFINDY_KIMI_BASE_URL` — for `api.moonshot.cn` or an OpenAI-compatible gateway |
 | Index | `<data>/com.guillaume.docfindy/graphify-out/content.db` + `files.json` |
 
 On Linux that resolves to `~/.config/…` and `~/.local/share/…`; on Windows to `%APPDATA%`.
@@ -167,7 +187,9 @@ Artifact: `docfindy-windows-installer`.
 
 **Nothing is found even though the file exists.** Check that its folder is in your indexed roots (⚙ → folders), and that the file type is supported. Rebuild with ⚙ → rebuild index after adding folders.
 
-**AI actions report that no key is configured.** Add one in ⚙; instant search works without it.
+**AI actions report that no key is configured.** Add one in ⚙ for the provider you selected — keys are per provider, so a Claude key does not cover ChatGPT. Instant search works without any key.
+
+**The model list will not load.** It is fetched from the provider, so it needs a saved, valid key and network access. When it fails the field falls back to free text — type the model id and it is used as-is.
 
 **Blank window or GPU warnings on WSL.** WSLg has no working DRI3 device. Run with software rendering:
 
@@ -183,12 +205,14 @@ WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 npm run tauri
 engine/          Python indexing sidecar (main.py, engine.spec)
 src/             React frontend (components/, i18n/)
 src-tauri/src/   Rust core
-  claude.rs        Claude API client + tool-use loop
+  agent.rs         Tool-use loop and prompts, provider-agnostic
+  provider.rs      Claude / ChatGPT / Kimi clients (two wire formats)
   commands.rs      Tauri commands exposed to the frontend
   engine.rs        Sidecar resolution and execution
   migrate.rs       Pre-rename data migration
   secrets.rs       Keychain + file fallback
   rtk.rs           rtk-compressed filesystem probe
+docs/screenshots/  README images + capture.py that regenerates them
 ```
 
 ---

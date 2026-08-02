@@ -28,10 +28,16 @@ export interface Preview {
   summary?: string | null;
 }
 
+export type ProviderId = "anthropic" | "openai" | "kimi";
+
 export interface AppSettings {
   lang: "en" | "es" | "fr";
   roots: string[];
-  model: string;
+  provider?: ProviderId;
+  /** chosen model per provider, so switching provider keeps both choices */
+  models?: Partial<Record<ProviderId, string>>;
+  /** legacy flat model key, still honoured for Claude */
+  model?: string;
   [k: string]: unknown;
 }
 

@@ -1,7 +1,8 @@
-mod claude;
+mod agent;
 mod commands;
 mod engine;
 mod migrate;
+mod provider;
 mod rtk;
 mod secrets;
 
@@ -19,6 +20,9 @@ pub fn run() {
             commands::save_settings,
             commands::set_api_key,
             commands::has_api_key,
+            commands::provider_keys,
+            commands::list_models,
+            commands::open_provider_keys_page,
             commands::index_status,
             commands::detect_paths,
             commands::build_index,
