@@ -265,6 +265,14 @@ export default function Settings({
                     ? t("settings.modelsNeedKey")
                     : t("settings.modelsCount", { count: models.length })}
             </div>
+            {/* The provider's own words. "401 Incorrect API key", "404 model
+                not found" and a DNS failure all need different fixes, and the
+                translated line above cannot tell them apart. */}
+            {modelsError && !loadingModels && (
+              <pre className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap break-words rounded-[9px] border border-red-500/30 bg-red-500/10 px-3 py-2 text-[11.5px] leading-relaxed text-red-400">
+                {modelsError}
+              </pre>
+            )}
           </div>
         </div>
         </div>
