@@ -31,6 +31,7 @@ pub struct AgentResult {
 fn system_prompt(lang: &str, roots: &[String]) -> String {
     let lang_line = match lang {
         "es" => "Responde SIEMPRE en español.",
+        "fr" => "Réponds TOUJOURS en français.",
         _ => "ALWAYS reply in English.",
     };
     format!(
@@ -399,6 +400,7 @@ pub async fn summarize(
     }
     let lang_line = match lang {
         "es" => "Escribe en español.",
+        "fr" => "Écris en français.",
         _ => "Write in English.",
     };
     let system = format!(
@@ -462,6 +464,7 @@ pub async fn ask(
     }
     let lang_line = match lang {
         "es" => "Responde en español.",
+        "fr" => "Réponds en français.",
         _ => "Answer in English.",
     };
     let system = format!(

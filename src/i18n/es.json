@@ -1,5 +1,11 @@
 {
-  "app": { "name": "DocFindy", "tagline": "Encuentra cualquier archivo. Solo pregunta." },
+  "app": {
+    "name": "DocFindy",
+    "tagline": "Encuentra cualquier archivo. Solo pregunta.",
+    "localIndex": "Índice local",
+    "settings": "Ajustes",
+    "resizePreview": "Redimensionar panel de vista previa"
+  },
   "chat": {
     "placeholder": "Busca por nombre o contenido…",
     "send": "Enviar",
@@ -7,7 +13,12 @@
     "emptyTitle": "Encuentra cualquier archivo. Solo pregunta.",
     "empty": "Empieza a escribir para encontrar cualquier archivo — por nombre o por su contenido.",
     "examples": "Prueba: \"presupuesto\" · \"impuestos\" · \"currículum\"",
-    "suggestions": ["Informe financiero", "Contratos", "Archivos de diseño", "Facturas"],
+    "suggestions": [
+      "Informe financiero",
+      "Contratos",
+      "Archivos de diseño",
+      "Facturas"
+    ],
     "error": "Algo salió mal",
     "noKey": "Añade tu clave API de Claude en Ajustes para empezar a buscar.",
     "candidates": "{{count}} resultados — haz clic para previsualizar",
@@ -17,7 +28,14 @@
     "smart": "Búsqueda inteligente (sinónimos + traducciones)",
     "smartTerms": "buscado",
     "smartNoKey": "Añade una clave API de Claude en Ajustes para la búsqueda inteligente.",
-    "pinned": "Anclados"
+    "pinned": "Anclados",
+    "results": "{{count}} resultados",
+    "sort": "Ordenar resultados",
+    "relevance": "Relevancia",
+    "recent": "Recientes",
+    "name": "Nombre",
+    "searchShortcut": "Ir a la búsqueda",
+    "opened": "Documento abierto"
   },
   "menu": {
     "open": "Abrir",
@@ -48,7 +66,17 @@
     "reveal": "Mostrar",
     "ask": "Pregunta sobre este documento…",
     "document": "Documento",
-    "rowsShown": "Se muestran las primeras {{count}} filas"
+    "rowsShown": "Se muestran las primeras {{count}} filas",
+    "documentTab": "Documento",
+    "insightsTab": "Ideas IA",
+    "generateSummary": "Generar resumen",
+    "regenerateSummary": "Regenerar",
+    "summaryIntro": "Obtén una vista general concisa y los puntos clave del documento.",
+    "summaryPrivacy": "Esta acción envía hasta 12.000 caracteres del documento a Anthropic.",
+    "askLabel": "Preguntar al documento",
+    "askPrivacy": "Tu pregunta y un extracto del documento se envían a Anthropic.",
+    "emptyTitle": "Selecciona un documento",
+    "emptyHint": "Busca a la izquierda y abre un resultado para verlo aquí."
   },
   "theme": {
     "toLight": "Cambiar a claro",
@@ -70,7 +98,10 @@
     "reindex": "Reconstruir índice",
     "updateIndex": "Actualizar índice",
     "save": "Guardar",
-    "close": "Cerrar"
+    "close": "Cerrar",
+    "privacy": "Excluido del índice",
+    "skippedSensitive": "{{count}} archivos ocultos o sensibles omitidos por completo",
+    "secretFiles": "{{count}} archivos indexados solo por su nombre — su contenido coincidió con un patrón de secreto"
   },
   "onboarding": {
     "welcome": "Bienvenido a DocFindy",

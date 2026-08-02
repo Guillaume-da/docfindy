@@ -29,7 +29,7 @@ export interface Preview {
 }
 
 export interface AppSettings {
-  lang: "en" | "es";
+  lang: "en" | "es" | "fr";
   roots: string[];
   model: string;
   [k: string]: unknown;
@@ -40,4 +40,8 @@ export interface IndexStatus {
   roots?: string[];
   built_at?: number;
   files?: number;
+  /** files left out of the index entirely (hidden, or a secret-ish name) */
+  skipped_sensitive?: number;
+  /** files indexed by name only, because their content matched a secret pattern */
+  secret_files?: number;
 }

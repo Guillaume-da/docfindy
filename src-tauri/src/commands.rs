@@ -91,6 +91,10 @@ pub fn index_status(app: tauri::AppHandle) -> Value {
         "roots": meta["roots"],
         "built_at": meta["built_at"],
         "files": meta["files"].as_array().map(|a| a.len()).unwrap_or(0),
+        // Privacy counters. Absent from indexes built before they existed, so
+        // default to 0 rather than propagating null into the UI.
+        "skipped_sensitive": meta["skipped_sensitive"].as_u64().unwrap_or(0),
+        "secret_files": meta["secret_files"].as_u64().unwrap_or(0),
     })
 }
 

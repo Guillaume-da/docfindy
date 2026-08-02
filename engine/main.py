@@ -90,7 +90,15 @@ SKIP_FILES = {"desktop.ini", "thumbs.db", ".ds_store"}
 
 # Never index secrets, by name prefix or suffix; counted as skipped_sensitive.
 SENSITIVE_PREFIXES = (".env", "id_rsa", "id_ed25519", "id_ecdsa")
-SENSITIVE_SUFFIXES = {".pem", ".key", ".kdbx", ".pfx", ".p12", ".ppk", ".keychain"}
+SENSITIVE_SUFFIXES = {".pem", ".key", ".kdbx", ".pfx", ".p12", ".ppk", ".keychain",
+                      ".tfvars", ".tfstate", ".jks", ".p8"}
+
+# Secrets do not always hide behind a dot or a telling extension: a plain
+# credentials.json or secrets.yaml is just as sensitive. Matched on the stem,
+# so credentials.json, credentials.csv and secrets.yml all hit; config.json
+# and other ordinary names do not.
+SENSITIVE_STEMS = {"credentials", "credential", "secrets", "secret",
+                   "serviceaccount", "service-account", "service_account"}
 
 DOCUMENT_SUFFIXES = {
     ".pdf", ".docx", ".doc", ".odt", ".rtf", ".txt", ".md", ".markdown",
@@ -124,8 +132,33 @@ def _skip_dir(name: str) -> bool:
 
 def _is_sensitive(name: str) -> bool:
     n = name.lower()
-    return (n.startswith(SENSITIVE_PREFIXES)
-            or Path(n).suffix in SENSITIVE_SUFFIXES)
+    return (n.startswith(".")
+            or n.startswith(SENSITIVE_PREFIXES)
+            or Path(n).suffix in SENSITIVE_SUFFIXES
+            or Path(n).stem in SENSITIVE_STEMS)
+
+
+# Content-level secret detection: the name-based rules above cannot catch a
+# token pasted into an otherwise ordinary notes.txt or config.json. A file
+# whose extracted text matches any of these keeps its *name* in the index but
+# contributes no *content*, so the token can never surface in a snippet — nor
+# be sent to Claude by an AI panel, which reads the same extraction path.
+# Patterns are deliberately tight: a false positive silently costs content
+# search on that file, so anchor on issuer-specific shapes, never on loose
+# words like "password".
+SECRET_PATTERNS = (
+    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
+    re.compile(r"sk-ant-[A-Za-z0-9_-]{20,}"),
+    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+    re.compile(r"\bgh[pousr]_[A-Za-z0-9]{36,}"),
+    re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{12,}"),
+    re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b"),
+    re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"),
+)
+
+
+def _has_secret(text: str) -> bool:
+    return any(p.search(text) for p in SECRET_PATTERNS)
 
 
 def _collect(root: Path) -> tuple[list[dict], int]:
@@ -185,10 +218,12 @@ def _build(out_dir: Path, roots: list[Path]) -> None:
     t0 = time.time()
 
     files_index: list[dict] = []
+    skipped_sensitive = 0
     for root in roots:
         _progress("detect", root=str(root))
-        files, _sensitive = _collect(root)
+        files, sensitive = _collect(root)
         files_index += files
+        skipped_sensitive += sensitive
         _progress("detected", root=str(root), files=len(files))
 
     # dedupe by path (same file reachable from two roots)
@@ -196,14 +231,18 @@ def _build(out_dir: Path, roots: list[Path]) -> None:
     files_index = [f for f in files_index
                    if not (f["path"] in seen or seen.add(f["path"]))]
 
+    _progress("fts", files=len(files_index))
+    fts_docs, secret_files = _build_fts(out_dir, files_index)
+
+    # Written after the FTS pass so the privacy counters it produces land in
+    # the same file the UI reads for index status.
     (out_dir / "files.json").write_text(json.dumps({
         "roots": [str(r) for r in roots],
         "built_at": int(time.time()),
+        "skipped_sensitive": skipped_sensitive,
+        "secret_files": secret_files,
         "files": files_index,
     }, ensure_ascii=False), encoding="utf-8")
-
-    _progress("fts", files=len(files_index))
-    fts_docs = _build_fts(out_dir, files_index)
 
     # stale artifacts from the graphify era — these names are historical, they
     # are what is actually on disk from older versions, so they do not follow
@@ -212,6 +251,7 @@ def _build(out_dir: Path, roots: list[Path]) -> None:
     (out_dir / ".findy_extract.json").unlink(missing_ok=True)
 
     _emit({"ok": True, "files": len(files_index), "fts_docs": fts_docs,
+           "skipped_sensitive": skipped_sensitive, "secret_files": secret_files,
            "seconds": round(time.time() - t0, 1)})
 
 
@@ -671,7 +711,12 @@ def _fts_connect(out_dir: Path):
     import sqlite3
     db = sqlite3.connect(out_dir / "content.db")
     db.execute("CREATE TABLE IF NOT EXISTS meta("
-               "path TEXT PRIMARY KEY, mtime INTEGER, size INTEGER)")
+               "path TEXT PRIMARY KEY, mtime INTEGER, size INTEGER, "
+               "secret INTEGER NOT NULL DEFAULT 0)")
+    # `secret` postdates the first released schema; add it to indexes built
+    # before it existed rather than forcing a full rebuild.
+    if not any(r[1] == "secret" for r in db.execute("PRAGMA table_info(meta)")):
+        db.execute("ALTER TABLE meta ADD COLUMN secret INTEGER NOT NULL DEFAULT 0")
     db.execute("CREATE VIRTUAL TABLE IF NOT EXISTS docs USING fts5("
                "path UNINDEXED, name, text, "
                "tokenize='unicode61 remove_diacritics 2')")
@@ -691,8 +736,14 @@ def _name_words(name: str) -> list[str]:
     return [t for t in re.findall(r"[^\W_]+", _fold(stem), re.UNICODE) if len(t) >= 3]
 
 
-def _build_fts(out_dir: Path, files: list[dict]) -> int:
+def _build_fts(out_dir: Path, files: list[dict]) -> tuple[int, int]:
     """Upsert one row per indexed file; re-extract only changed files.
+
+    Returns (changed, secret_files): the number of rows written, and the total
+    number of files in the index whose content was withheld because it matched
+    a secret pattern. The second figure is read back from `meta`, not counted
+    in this pass — an incremental update only revisits changed files, so a
+    running total would reset to near zero on every refresh.
 
     Extraction-failure sentinels from _extract_text (short parenthesized
     strings) are dropped so they never pollute search results.
@@ -710,18 +761,25 @@ def _build_fts(out_dir: Path, files: list[dict]) -> int:
             continue
         fp = Path(p)
         text = ""
+        secret = 0
         if (fp.suffix.lower() in FTS_CONTENT_SUFFIXES
                 and f["size"] <= FTS_MAX_FILE_BYTES):
             text = _extract_text(fp, FTS_MAX_CHARS)
             if text.startswith("(") and text.endswith(")") and len(text) < 200:
                 text = ""
+            elif _has_secret(text):
+                # keep the file findable by name, drop the body entirely
+                text = ""
+                secret = 1
         db.execute("DELETE FROM docs WHERE path = ?", (p,))
         db.execute("INSERT INTO docs(path, name, text) VALUES (?, ?, ?)",
                    (p, f["name"], text))
-        db.execute("INSERT INTO meta(path, mtime, size) VALUES (?, ?, ?) "
+        db.execute("INSERT INTO meta(path, mtime, size, secret) "
+                   "VALUES (?, ?, ?, ?) "
                    "ON CONFLICT(path) DO UPDATE SET "
-                   "mtime = excluded.mtime, size = excluded.size",
-                   (p, f["mtime"], f["size"]))
+                   "mtime = excluded.mtime, size = excluded.size, "
+                   "secret = excluded.secret",
+                   (p, f["mtime"], f["size"], secret))
         changed += 1
         if changed % 50 == 0:
             _progress("fts", done=changed)
@@ -737,8 +795,9 @@ def _build_fts(out_dir: Path, files: list[dict]) -> int:
     db.executemany("INSERT OR IGNORE INTO name_tokens(token) VALUES (?)",
                    [(t,) for t in vocab])
     db.commit()
+    secret_files = db.execute("SELECT COUNT(*) FROM meta WHERE secret = 1").fetchone()[0]
     db.close()
-    return changed
+    return changed, secret_files
 
 
 def cmd_fts(args: argparse.Namespace) -> None:

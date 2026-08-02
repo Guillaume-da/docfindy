@@ -12,7 +12,7 @@ export default function LangToggle({
   const { i18n } = useTranslation();
   const lang = (settings?.lang as string) || i18n.language || "en";
 
-  async function setLang(next: "en" | "es") {
+  async function setLang(next: "en" | "es" | "fr") {
     i18n.changeLanguage(next);
     // Never invent the rest of the settings here: a literal fallback would
     // write roots: [] over a configured index. When the caller has no
@@ -25,7 +25,7 @@ export default function LangToggle({
 
   return (
     <div className="flex gap-0.5 rounded-[9px] bg-fill-2 p-0.5">
-      {(["en", "es"] as const).map((l) => (
+      {(["en", "es", "fr"] as const).map((l) => (
         <button
           key={l}
           onClick={() => setLang(l)}
