@@ -17,7 +17,7 @@ Desktop file finder that searches **inside** your documents, not just their name
 
 With an API key you also get: an on-demand AI summary of the previewed document, ask-a-question about the open document, and smart search that expands your query with synonyms and FR/EN translations before hitting the index.
 
-**Bring your own provider.** Claude, ChatGPT or Kimi — pick one in Settings and paste that provider's key. Each key is stored separately, so switching provider does not make you re-enter the other one. The model list is fetched from the provider itself, so a newly released model is selectable without waiting for a DocFindy update.
+**Bring your own provider.** Claude, ChatGPT or Kimi — pick one in Settings (or right from the welcome screen) and paste that provider's key. Each key is stored separately, so switching provider does not make you re-enter the other one. The model list is fetched from the provider itself, so a newly released model is selectable without waiting for a DocFindy update.
 
 **The API key is optional.** Without it, indexing, search, preview and open all work; AI actions remain visible but ask you to configure a key when used.
 
@@ -25,13 +25,13 @@ With an API key you also get: an on-demand AI summary of the previewed document,
 
 ### First run
 
-Pick the folders to index. The API key field can be left empty.
+Pick the folders to index. The API key field can be left empty — and if you hold keys for several providers, you can enter them all here: each tab keeps what you typed.
 
 ![Onboarding screen](docs/screenshots/onboarding.png)
 
 ### Settings
 
-Choose the AI provider, store its key, and pick a model from the list the provider reports.
+A full screen, not a dialog. Choose the AI provider, store its key, and pick a model from the list the provider reports.
 
 ![Settings panel](docs/screenshots/settings.png)
 

@@ -119,7 +119,8 @@
     "pickFolder": "Choisir un dossier",
     "browse": "Parcourir",
     "folderPlaceholder": "Aucun dossier sélectionné",
-    "noFolders": "Ajoutez au moins un dossier."
+    "noFolders": "Ajoutez au moins un dossier.",
+    "keyHint": "Choisissez un fournisseur et collez sa clé. Vous pouvez en saisir plusieurs — changez d'onglet, chaque clé est conservée."
   },
   "index": {
     "files": "{{count}} fichiers indexés",

@@ -119,7 +119,8 @@
     "pickFolder": "Choose a folder",
     "browse": "Browse",
     "folderPlaceholder": "No folder selected",
-    "noFolders": "Add at least one folder."
+    "noFolders": "Add at least one folder.",
+    "keyHint": "Pick a provider and paste its key. You can enter more than one — switch tabs and each key is kept."
   },
   "index": {
     "files": "{{count}} files indexed",
