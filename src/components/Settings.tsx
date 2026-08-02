@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
@@ -6,7 +6,7 @@ import IndexProgress from "./IndexProgress";
 import LangToggle from "./LangToggle";
 import ThemeToggle from "./ThemeToggle";
 import { FolderIcon } from "./icons";
-import type { AppSettings } from "../types";
+import type { AppSettings, IndexStatus } from "../types";
 
 export default function Settings({
   settings,
@@ -21,6 +21,17 @@ export default function Settings({
   const [roots, setRoots] = useState<string[]>(settings.roots || []);
   const [indexing, setIndexing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<IndexStatus | null>(null);
+
+  // What the index left out is only trustworthy if it is visible: without it,
+  // a file missing from the results is indistinguishable from a bug.
+  const loadStatus = useCallback(() => {
+    invoke<IndexStatus>("index_status")
+      .then(setStatus)
+      .catch(() => setStatus(null));
+  }, []);
+
+  useEffect(loadStatus, [loadStatus]);
 
   async function saveKey() {
     if (!apiKey.trim()) return;
@@ -42,6 +53,7 @@ export default function Settings({
     setIndexing(true);
     try {
       await invoke("build_index", { paths: roots });
+      loadStatus();
     } catch (e) {
       setError(String(e));
     } finally {
@@ -54,6 +66,7 @@ export default function Settings({
     setIndexing(true);
     try {
       await invoke("update_index");
+      loadStatus();
     } catch (e) {
       setError(String(e));
     } finally {
@@ -145,6 +158,18 @@ export default function Settings({
               {t("settings.updateIndex")}
             </button>
           </div>
+
+          {!indexing && status?.exists && (
+            <div className="mt-4 border-t border-edge-soft pt-4">
+              <div className="mb-1.5 text-[11.5px] font-semibold uppercase tracking-[0.05em] text-label">
+                {t("settings.privacy")}
+              </div>
+              <ul className="space-y-1 text-[12.5px] leading-relaxed text-muted">
+                <li>{t("settings.skippedSensitive", { count: status.skipped_sensitive ?? 0 })}</li>
+                <li>{t("settings.secretFiles", { count: status.secret_files ?? 0 })}</li>
+              </ul>
+            </div>
+          )}
 
           {indexing && (
             <div className="mt-4">

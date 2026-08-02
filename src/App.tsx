@@ -72,10 +72,31 @@ export default function App() {
     };
   }, []);
 
-  function startDrag() {
+  function setPreviewWidth(next: number) {
+    const clamped = Math.min(75, Math.max(20, next));
+    pctRef.current = clamped;
+    setPreviewPct(clamped);
+    localStorage.setItem("docfindy.previewPct", String(Math.round(clamped)));
+  }
+
+  function startDrag(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.button !== 0) return;
     dragging.current = true;
     document.body.style.userSelect = "none";
     document.body.style.cursor = "col-resize";
+  }
+
+  function resizeWithKeyboard(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      setPreviewWidth(previewPct + 3);
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      setPreviewWidth(previewPct - 3);
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      setPreviewWidth(42);
+    }
   }
 
   const refresh = useCallback(async () => {
@@ -129,28 +150,37 @@ export default function App() {
 
   return (
     <div className="flex h-full flex-col bg-surface backdrop-blur-2xl backdrop-saturate-150 float-in">
-      <header className="flex flex-shrink-0 items-center gap-3.5 border-b border-edge-soft px-5 pb-3.5 pt-4">
-        <div className="flex items-center gap-2.5">
-          <span className="grid h-[34px] w-[34px] place-items-center rounded-[10px] bg-gradient-to-br from-accent to-accent-2 glow">
+      <header className="flex flex-shrink-0 items-center gap-3.5 border-b border-edge-soft bg-titlebar/45 px-5 pb-3 pt-3.5 backdrop-blur-xl">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="grid h-[36px] w-[36px] shrink-0 place-items-center rounded-[11px] border border-white/10 bg-gradient-to-br from-accent to-accent-2 glow">
             <SearchGlyph className="h-[19px] w-[19px]" />
           </span>
-          <span className="text-[19px] font-bold tracking-tight text-txt-strong">
-            DocFindy
-          </span>
-          {indexStatus?.files ? (
-            <span className="rounded-full bg-pill px-2.5 py-1 text-xs font-medium text-muted">
-              {t("index.files", { count: indexStatus.files })}
-            </span>
-          ) : null}
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-[18px] font-bold tracking-tight text-txt-strong">
+                DocFindy
+              </span>
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-pill px-2 py-0.5 text-[10px] font-semibold text-muted">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.55)]" />
+                {t("app.localIndex")}
+              </span>
+            </div>
+            {indexStatus?.files ? (
+              <div className="mt-0.5 truncate text-[10.5px] text-muted-2">
+                {t("index.files", { count: indexStatus.files })}
+              </div>
+            ) : null}
+          </div>
         </div>
 
-        <div className="ml-auto flex items-center gap-2.5">
+        <div className="ml-auto flex items-center gap-2">
           <LangToggle settings={settings} onChanged={(s) => setSettings(s)} />
           <ThemeToggle />
           <button
             onClick={() => setShowSettings(true)}
             className="grid h-[34px] w-[34px] place-items-center rounded-[9px] bg-fill-2 text-muted transition hover:bg-fill-hover hover:text-txt"
-            title="Settings"
+            title={t("app.settings")}
+            aria-label={t("app.settings")}
           >
             <svg
               width="17"
@@ -173,18 +203,29 @@ export default function App() {
         </div>
         <div
           onPointerDown={startDrag}
-          className="group relative w-px shrink-0 cursor-col-resize bg-edge-soft transition hover:bg-accent"
-          title="Drag to resize"
+          onDoubleClick={() => setPreviewWidth(42)}
+          onKeyDown={resizeWithKeyboard}
+          className="group relative w-px shrink-0 cursor-col-resize bg-edge-soft transition hover:bg-accent focus:bg-accent focus:outline-none"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={t("app.resizePreview")}
+          aria-valuemin={20}
+          aria-valuemax={75}
+          aria-valuenow={Math.round(previewPct)}
+          tabIndex={0}
+          title={t("app.resizePreview")}
         >
-          <div className="absolute inset-y-0 -left-1.5 -right-1.5" />
+          <div className="absolute inset-y-0 -left-2 -right-2" />
+          <div className="pointer-events-none absolute left-1/2 top-1/2 h-12 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-edge opacity-0 transition group-hover:opacity-100 group-focus:opacity-100" />
         </div>
         <div className="min-w-0 shrink-0" style={{ width: `${previewPct}%` }}>
           <PreviewPane preview={preview} />
         </div>
       </div>
 
-      <footer className="flex-shrink-0 border-t border-edge-soft px-5 py-2 text-center text-xs font-medium text-muted-2">
-        Made by G. Dall'Olmo
+      <footer className="flex flex-shrink-0 items-center justify-between border-t border-edge-soft bg-titlebar/25 px-5 py-1.5 text-[10.5px] font-medium text-muted-2">
+        <span>DocFindy</span>
+        <span>Made by G. Dall'Olmo</span>
       </footer>
 
       {showSettings && settings && (

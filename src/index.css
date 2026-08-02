@@ -282,3 +282,33 @@ html.light body {
 .glow {
   box-shadow: 0 4px 12px -3px color-mix(in srgb, var(--color-accent) 50%, transparent);
 }
+
+/* Consistent desktop controls and keyboard focus. */
+html {
+  color-scheme: dark;
+}
+html.light {
+  color-scheme: light;
+}
+body {
+  overflow: hidden;
+}
+button,
+input {
+  font: inherit;
+}
+button:focus-visible,
+input:focus-visible {
+  outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

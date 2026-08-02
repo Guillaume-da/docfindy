@@ -1,5 +1,11 @@
 {
-  "app": { "name": "DocFindy", "tagline": "Find any file. Just ask." },
+  "app": {
+    "name": "DocFindy",
+    "tagline": "Find any file. Just ask.",
+    "localIndex": "Local index",
+    "settings": "Settings",
+    "resizePreview": "Resize preview pane"
+  },
   "chat": {
     "placeholder": "Search by name or content…",
     "send": "Send",
@@ -7,7 +13,12 @@
     "emptyTitle": "Find any file. Just ask.",
     "empty": "Start typing to find any file — by name or by what's inside.",
     "examples": "Try: \"budget\" · \"tax\" · \"resume\"",
-    "suggestions": ["Financial report", "Contracts", "Design files", "Invoices"],
+    "suggestions": [
+      "Financial report",
+      "Contracts",
+      "Design files",
+      "Invoices"
+    ],
     "error": "Something went wrong",
     "noKey": "Add your Claude API key in Settings to start searching.",
     "candidates": "{{count}} matches — click to preview",
@@ -17,7 +28,14 @@
     "smart": "Smart search (synonyms + translations)",
     "smartTerms": "searched",
     "smartNoKey": "Add a Claude API key in Settings for smart search.",
-    "pinned": "Pinned"
+    "pinned": "Pinned",
+    "results": "{{count}} results",
+    "sort": "Sort results",
+    "relevance": "Relevance",
+    "recent": "Recent",
+    "name": "Name",
+    "searchShortcut": "Focus search",
+    "opened": "Opened document"
   },
   "menu": {
     "open": "Open",
@@ -48,7 +66,17 @@
     "reveal": "Reveal",
     "ask": "Ask about this document…",
     "document": "Document",
-    "rowsShown": "First {{count}} rows shown"
+    "rowsShown": "First {{count}} rows shown",
+    "documentTab": "Document",
+    "insightsTab": "AI insights",
+    "generateSummary": "Generate summary",
+    "regenerateSummary": "Regenerate",
+    "summaryIntro": "Get a concise overview and key takeaways from this document.",
+    "summaryPrivacy": "This action sends up to 12,000 characters from the document to Anthropic.",
+    "askLabel": "Ask the document",
+    "askPrivacy": "Your question and an excerpt of the document are sent to Anthropic.",
+    "emptyTitle": "Select a document",
+    "emptyHint": "Search on the left, then open a result to preview it here."
   },
   "theme": {
     "toLight": "Switch to light",
@@ -70,7 +98,10 @@
     "reindex": "Rebuild index",
     "updateIndex": "Update index",
     "save": "Save",
-    "close": "Close"
+    "close": "Close",
+    "privacy": "Left out of the index",
+    "skippedSensitive": "{{count}} hidden or sensitive files skipped entirely",
+    "secretFiles": "{{count}} files indexed by name only — their content matched a secret pattern"
   },
   "onboarding": {
     "welcome": "Welcome to DocFindy",

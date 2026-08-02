@@ -13,11 +13,11 @@ Desktop file finder that searches **inside** your documents, not just their name
 - **Rich previews.** Documents render in place — docx keeps its formatting, tables and images — with quick actions to open the file or reveal it in your file manager.
 - **Favourites.** Pin the files you keep coming back to.
 - **Keyboard-driven.** `↑`/`↓` to move through results, `Enter` to open the selected one.
-- **Light and dark themes**, plus a **bilingual UI** (English and Spanish), both switchable at runtime.
+- **Light and dark themes**, plus a **trilingual UI** (English, Spanish and French), both switchable at runtime.
 
-With a Claude API key you also get: AI summary of the previewed document, ask-a-question about the open document, and smart search that expands your query with synonyms and FR/EN translations before hitting the index.
+With a Claude API key you also get: an on-demand AI summary of the previewed document, ask-a-question about the open document, and smart search that expands your query with synonyms and FR/EN translations before hitting the index.
 
-**The API key is optional.** Without it, indexing, search, preview and open all work; only the AI panels are hidden.
+**The API key is optional.** Without it, indexing, search, preview and open all work; AI actions remain visible but ask you to configure a key when used.
 
 ## Screenshots
 
@@ -167,7 +167,7 @@ Artifact: `docfindy-windows-installer`.
 
 **Nothing is found even though the file exists.** Check that its folder is in your indexed roots (⚙ → folders), and that the file type is supported. Rebuild with ⚙ → rebuild index after adding folders.
 
-**AI panels are missing.** No API key is set. Add one in ⚙; instant search works without it.
+**AI actions report that no key is configured.** Add one in ⚙; instant search works without it.
 
 **Blank window or GPU warnings on WSL.** WSLg has no working DRI3 device. Run with software rendering:
 
