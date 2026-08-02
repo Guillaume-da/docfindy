@@ -637,13 +637,13 @@ mod tests {
         }]
     }
 
-    // The env override is process-global, so these two share a lock rather
-    // than racing each other under the test harness's thread pool.
-    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    // Each test overrides a different provider's variable, so they cannot
+    // clobber each other, and std::env serialises its own reads and writes.
+    // No extra lock — one held across the request would be a MutexGuard living
+    // through an await.
 
     #[tokio::test]
     async fn openai_request_carries_function_tools_and_parses_a_tool_call() {
-        let _guard = ENV_LOCK.lock().unwrap();
         let (url, rx) = one_shot_server(
             r#"{"choices":[{"message":{"content":null,"tool_calls":[
                 {"id":"call_1","type":"function",
@@ -680,7 +680,6 @@ mod tests {
 
     #[tokio::test]
     async fn anthropic_request_keeps_system_top_level_and_parses_tool_use() {
-        let _guard = ENV_LOCK.lock().unwrap();
         let (url, rx) = one_shot_server(
             r#"{"content":[{"type":"text","text":"ok"},
                 {"type":"tool_use","id":"tu_1","name":"doc_search",
