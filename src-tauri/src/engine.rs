@@ -18,7 +18,11 @@ fn engine_command() -> (String, Vec<String>) {
     }
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
-            let name = if cfg!(windows) { "docfindy-engine.exe" } else { "docfindy-engine" };
+            let name = if cfg!(windows) {
+                "docfindy-engine.exe"
+            } else {
+                "docfindy-engine"
+            };
             let p = dir.join(name);
             if p.exists() {
                 return (p.to_string_lossy().into_owned(), vec![]);
@@ -87,7 +91,9 @@ pub async fn run(
     {
         use tokio::io::AsyncReadExt;
         let mut out = child.stdout.take().unwrap();
-        out.read_to_string(&mut stdout).await.map_err(|e| e.to_string())?;
+        out.read_to_string(&mut stdout)
+            .await
+            .map_err(|e| e.to_string())?;
     }
     let status = child.wait().await.map_err(|e| e.to_string())?;
     let err_tail = stderr_task.await.unwrap_or_default();

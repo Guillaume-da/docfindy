@@ -27,7 +27,11 @@ fn rtk_program() -> Option<String> {
 fn which(bin: &str) -> Option<String> {
     let path = std::env::var_os("PATH")?;
     for dir in std::env::split_paths(&path) {
-        let p = dir.join(if cfg!(windows) { format!("{bin}.exe") } else { bin.into() });
+        let p = dir.join(if cfg!(windows) {
+            format!("{bin}.exe")
+        } else {
+            bin.into()
+        });
         if p.is_file() {
             return Some(p.to_string_lossy().into_owned());
         }
@@ -85,7 +89,12 @@ fn walk_probe(dir: &str, pattern: &str) -> String {
         if !entry.file_type().is_file() {
             continue;
         }
-        if entry.file_name().to_string_lossy().to_lowercase().contains(&needle) {
+        if entry
+            .file_name()
+            .to_string_lossy()
+            .to_lowercase()
+            .contains(&needle)
+        {
             let p = entry.path().strip_prefix(root).unwrap_or(entry.path());
             hits.push(p.to_string_lossy().into_owned());
         }
@@ -94,6 +103,10 @@ fn walk_probe(dir: &str, pattern: &str) -> String {
     if hits.is_empty() {
         return format!("0 hits for '{pattern}' under {dir}");
     }
-    let truncated = if hits.len() >= MAX_RESULTS { " (truncated)" } else { "" };
+    let truncated = if hits.len() >= MAX_RESULTS {
+        " (truncated)"
+    } else {
+        ""
+    };
     format!("root={dir}{truncated}\n{}", hits.join("\n"))
 }

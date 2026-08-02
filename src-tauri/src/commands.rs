@@ -18,12 +18,14 @@ fn load_settings(app: &tauri::AppHandle) -> Value {
         .ok()
         .and_then(|p| fs::read_to_string(p).ok())
         .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_else(|| json!({
-            "lang": "en",
-            "roots": [],
-            "provider": Provider::Anthropic.id(),
-            "model": Provider::Anthropic.default_model(),
-        }))
+        .unwrap_or_else(|| {
+            json!({
+                "lang": "en",
+                "roots": [],
+                "provider": Provider::Anthropic.id(),
+                "model": Provider::Anthropic.default_model(),
+            })
+        })
 }
 
 /// The configured provider, and the model to use with it.
@@ -94,7 +96,11 @@ fn ensure_in_roots(app: &tauri::AppHandle, path: &str) -> Result<(), String> {
     let settings = load_settings(app);
     let roots: Vec<String> = settings["roots"]
         .as_array()
-        .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
     agent::resolve_in_roots(path, &roots).map(|_| ())
 }
@@ -229,9 +235,13 @@ pub async fn quick_search(app: tauri::AppHandle, query: String) -> Result<Value,
     }
     let out = engine::index_dir(&app)?.to_string_lossy().into_owned();
     let args: Vec<String> = vec![
-        "fts".into(), "--out".into(), out,
-        "--query".into(), q.to_string(),
-        "--limit".into(), "25".into(),
+        "fts".into(),
+        "--out".into(),
+        out,
+        "--query".into(),
+        q.to_string(),
+        "--limit".into(),
+        "25".into(),
     ];
     engine::run(&app, &args, false).await
 }
@@ -254,9 +264,13 @@ pub async fn smart_search(
     let terms = agent::expand_query(prov, &api_key, &model, q).await?;
     let out = engine::index_dir(&app)?.to_string_lossy().into_owned();
     let args: Vec<String> = vec![
-        "fts".into(), "--out".into(), out,
-        "--query".into(), terms.join(" "),
-        "--limit".into(), "25".into(),
+        "fts".into(),
+        "--out".into(),
+        out,
+        "--query".into(),
+        terms.join(" "),
+        "--limit".into(),
+        "25".into(),
     ];
     let mut v = engine::run(&app, &args, false).await?;
     v["expanded"] = json!(terms);
@@ -278,8 +292,11 @@ pub async fn summarize_file(
         .filter(|l| !l.trim().is_empty())
         .unwrap_or_else(|| settings["lang"].as_str().unwrap_or("en").to_string());
     let text_args: Vec<String> = vec![
-        "text".into(), "--path".into(), path,
-        "--max-chars".into(), "12000".into(),
+        "text".into(),
+        "--path".into(),
+        path,
+        "--max-chars".into(),
+        "12000".into(),
     ];
     let v = engine::run(&app, &text_args, false).await?;
     let text = v["text"].as_str().unwrap_or_default();
@@ -300,8 +317,11 @@ pub async fn ask_document(
         .filter(|l| !l.trim().is_empty())
         .unwrap_or_else(|| settings["lang"].as_str().unwrap_or("en").to_string());
     let text_args: Vec<String> = vec![
-        "text".into(), "--path".into(), path,
-        "--max-chars".into(), "12000".into(),
+        "text".into(),
+        "--path".into(),
+        path,
+        "--max-chars".into(),
+        "12000".into(),
     ];
     let v = engine::run(&app, &text_args, false).await?;
     let text = v["text"].as_str().unwrap_or_default();
@@ -320,7 +340,11 @@ pub async fn chat(app: tauri::AppHandle, messages: Vec<ChatMsg>) -> Result<Value
     let lang = settings["lang"].as_str().unwrap_or("en").to_string();
     let roots: Vec<String> = settings["roots"]
         .as_array()
-        .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
 
     // Prior turns replay as plain text on both sides: the tool calls that
@@ -329,22 +353,24 @@ pub async fn chat(app: tauri::AppHandle, messages: Vec<ChatMsg>) -> Result<Value
         .iter()
         .map(|m| {
             if m.role == "assistant" {
-                Msg::Assistant { text: m.content.clone(), calls: vec![] }
+                Msg::Assistant {
+                    text: m.content.clone(),
+                    calls: vec![],
+                }
             } else {
                 Msg::User(m.content.clone())
             }
         })
         .collect();
 
-    let result =
-        agent::agent_loop(&app, prov, &api_key, &model, &lang, &roots, history).await?;
+    let result = agent::agent_loop(&app, prov, &api_key, &model, &lang, &roots, history).await?;
     Ok(json!({"text": result.text, "shown": result.shown}))
 }
 
 const TEXT_EXTS: &[&str] = &[
-    "txt", "md", "markdown", "log", "csv", "json", "yaml", "yml", "toml", "ini",
-    "py", "js", "ts", "tsx", "jsx", "rs", "go", "java", "c", "cpp", "h", "sh",
-    "html", "htm", "css", "xml", "sql", "php", "rb",
+    "txt", "md", "markdown", "log", "csv", "json", "yaml", "yml", "toml", "ini", "py", "js", "ts",
+    "tsx", "jsx", "rs", "go", "java", "c", "cpp", "h", "sh", "html", "htm", "css", "xml", "sql",
+    "php", "rb",
 ];
 const IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico"];
 
@@ -379,8 +405,11 @@ pub async fn read_preview(app: tauri::AppHandle, path: String) -> Result<Value, 
     });
     if ext == "docx" || ext == "odt" {
         let args = vec![
-            "blocks".into(), "--path".into(), path,
-            "--max-chars".into(), "200000".into(),
+            "blocks".into(),
+            "--path".into(),
+            path,
+            "--max-chars".into(),
+            "200000".into(),
         ];
         match engine::run(&app, &args, false).await {
             Ok(v) => {
@@ -415,13 +444,20 @@ pub fn open_in_browser(app: tauri::AppHandle, path: String) -> Result<(), String
         // command line by rules Rust does not escape for, so a crafted filename
         // could break out of the argument and run as a command.
         use tauri_plugin_opener::OpenerExt;
-        return app.opener().open_url(url, None::<&str>).map_err(|e| e.to_string());
+        return app
+            .opener()
+            .open_url(url, None::<&str>)
+            .map_err(|e| e.to_string());
     }
 
     #[cfg(not(target_os = "windows"))]
     {
         for browser in ["google-chrome", "chromium", "chromium-browser", "firefox"] {
-            if std::process::Command::new(browser).arg(&url).spawn().is_ok() {
+            if std::process::Command::new(browser)
+                .arg(&url)
+                .spawn()
+                .is_ok()
+            {
                 return Ok(());
             }
         }
@@ -571,9 +607,13 @@ mod tests {
 
     #[test]
     fn ordinary_windows_paths_are_accepted() {
-        assert!(safe_for_explorer_arg("C:\\Users\\Sample\\Documents\\report.pdf"));
+        assert!(safe_for_explorer_arg(
+            "C:\\Users\\Sample\\Documents\\report.pdf"
+        ));
         assert!(safe_for_explorer_arg("C:\\Users\\Sample\\a & b (1).docx"));
-        assert!(safe_for_explorer_arg("C:\\Users\\Sample\\résumé — final.odt"));
+        assert!(safe_for_explorer_arg(
+            "C:\\Users\\Sample\\résumé — final.odt"
+        ));
     }
 
     #[test]
