@@ -130,8 +130,23 @@ pub fn sync_asset_scope(app: &tauri::AppHandle) {
     let Some(roots) = settings["roots"].as_array() else {
         return;
     };
-    let scope = app.asset_protocol_scope();
-    for root in roots.iter().filter_map(|r| r.as_str()) {
+    let roots: Vec<&str> = roots.iter().filter_map(|r| r.as_str()).collect();
+    allow_roots(&app.asset_protocol_scope(), &roots);
+}
+
+/// Widen `scope` to cover each root, recursively.
+///
+/// Split out from [`sync_asset_scope`] so it can be tested against a real
+/// `Scope` without an app: this is the half that decides what the webview may
+/// render, and it should not be taken on trust.
+///
+/// Note that this only ever *widens*. Revoking a root that has been dropped
+/// from the settings would mean `forbid_directory`, which tauri documents as
+/// taking precedence "always" — a root removed and later re-added would stay
+/// unreachable for the life of the process. Removing a root therefore takes
+/// effect on the next start.
+fn allow_roots(scope: &tauri::scope::fs::Scope, roots: &[&str]) {
+    for root in roots {
         if let Err(e) = scope.allow_directory(root, true) {
             eprintln!("asset scope: could not allow {root}: {e}");
         }
@@ -655,8 +670,109 @@ pub fn reveal_in_folder(app: tauri::AppHandle, path: String) -> Result<(), Strin
 
 #[cfg(test)]
 mod tests {
-    use super::{merge_settings, safe_for_explorer_arg};
+    use super::{allow_roots, encode_file_url_path, merge_settings, safe_for_explorer_arg};
     use serde_json::json;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use tauri::Manager;
+
+    fn scratch(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("docfindy-scope-{tag}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::canonicalize(&dir).unwrap()
+    }
+
+    fn touch(p: &Path) {
+        fs::create_dir_all(p.parent().unwrap()).unwrap();
+        fs::write(p, b"x").unwrap();
+    }
+
+    /// The webview may render a file inside an indexed root, and nothing else.
+    ///
+    /// This is the check that used to need a human at the window: with the old
+    /// `$HOME/**` static scope, `outside` below was renderable in an `<img>` or
+    /// a PDF `<iframe>` even though every command refuses to open it.
+    #[test]
+    fn the_asset_scope_covers_the_indexed_roots_and_nothing_else() {
+        let base = scratch("roots");
+        let root = base.join("docs");
+        let inside = root.join("nested/report.pdf");
+        let outside = base.join("elsewhere/private.pdf");
+        touch(&inside);
+        touch(&outside);
+
+        let app = tauri::test::mock_app();
+        let scope = app.asset_protocol_scope();
+
+        // nothing is allowed before the roots are synced — the static scope in
+        // tauri.conf.json is empty
+        assert!(!scope.is_allowed(&inside));
+
+        allow_roots(&scope, &[root.to_str().unwrap()]);
+
+        assert!(scope.is_allowed(&inside), "indexed root is not renderable");
+        assert!(
+            !scope.is_allowed(&outside),
+            "a path outside the roots is renderable"
+        );
+        assert!(
+            !scope.is_allowed(base.join("elsewhere")),
+            "a directory outside the roots is renderable"
+        );
+
+        fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn a_root_added_later_becomes_renderable_without_widening_the_rest() {
+        let base = scratch("second-root");
+        let first = base.join("docs");
+        let second = base.join("more-docs");
+        let outside = base.join("elsewhere/private.pdf");
+        let in_first = first.join("a.png");
+        let in_second = second.join("b.png");
+        touch(&in_first);
+        touch(&in_second);
+        touch(&outside);
+
+        let app = tauri::test::mock_app();
+        let scope = app.asset_protocol_scope();
+
+        allow_roots(&scope, &[first.to_str().unwrap()]);
+        assert!(scope.is_allowed(&in_first));
+        assert!(!scope.is_allowed(&in_second));
+
+        // reindexing with an extra root widens the scope to it, and only to it
+        allow_roots(&scope, &[first.to_str().unwrap(), second.to_str().unwrap()]);
+        assert!(scope.is_allowed(&in_second));
+        assert!(!scope.is_allowed(&outside));
+
+        fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn a_file_url_path_keeps_its_separators_and_escapes_the_rest() {
+        assert_eq!(
+            encode_file_url_path("/home/u/report.pdf"),
+            "/home/u/report.pdf"
+        );
+        // `#` and `?` would truncate the URL; a space would end it in some handlers
+        assert_eq!(
+            encode_file_url_path("/home/u/a #1 (final)?.pdf"),
+            "/home/u/a%20%231%20%28final%29%3F.pdf"
+        );
+        // Windows drive letters survive, backslashes are turned to `/` by the caller
+        assert_eq!(
+            encode_file_url_path("C:/Users/u/note.txt"),
+            "C:/Users/u/note.txt"
+        );
+        // non-ASCII is percent-encoded per UTF-8 byte
+        assert_eq!(
+            encode_file_url_path("/tmp/résumé.pdf"),
+            "/tmp/r%C3%A9sum%C3%A9.pdf"
+        );
+    }
 
     #[test]
     fn ordinary_windows_paths_are_accepted() {
