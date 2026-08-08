@@ -34,25 +34,43 @@ pub fn set(app: &tauri::AppHandle, prov: Provider, key: &str) -> Result<(), Stri
         }
     }
     let p = fallback_path(app, prov).ok_or("no config dir")?;
-    fs::write(&p, key).map_err(|e| e.to_string())?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = fs::set_permissions(&p, fs::Permissions::from_mode(0o600));
-    }
     #[cfg(windows)]
     {
         // No mode bits here: the file inherits the config dir's ACL, which is
         // per-user under %APPDATA% but is not an equivalent of 0600. Mark it
         // hidden so it is at least not stumbled upon; the keychain is the
         // primary store and this path is only reached when it fails.
+        //
+        // The attribute has to be set by the call that *creates* the file —
+        // applied to an open of an existing file it is ignored, so writing
+        // first and re-opening afterwards would leave the key in plain sight.
+        use std::io::Write;
         use std::os::windows::fs::OpenOptionsExt;
         const FILE_ATTRIBUTE_HIDDEN: u32 = 0x2;
-        let _ = fs::OpenOptions::new()
+        let mut f = fs::OpenOptions::new()
             .write(true)
+            .create(true)
+            .truncate(true)
             .attributes(FILE_ATTRIBUTE_HIDDEN)
-            .open(&p);
+            .open(&p)
+            .map_err(|e| e.to_string())?;
+        f.write_all(key.as_bytes()).map_err(|e| e.to_string())?;
     }
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        // Created 0600 rather than fixed up afterwards: a write-then-chmod
+        // leaves the key world-readable for the width of that gap.
+        let mut opts = fs::OpenOptions::new();
+        opts.write(true).create(true).truncate(true).mode(0o600);
+        let mut f = opts.open(&p).map_err(|e| e.to_string())?;
+        f.write_all(key.as_bytes()).map_err(|e| e.to_string())?;
+        // an existing file keeps its old mode: set it explicitly too
+        let _ = fs::set_permissions(&p, fs::Permissions::from_mode(0o600));
+    }
+    #[cfg(not(any(unix, windows)))]
+    fs::write(&p, key).map_err(|e| e.to_string())?;
     Ok(())
 }
 

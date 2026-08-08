@@ -27,5 +27,9 @@ dist-ssr
 engine/.venv/
 engine/build/
 engine/dist/
-src-tauri/binaries/*.exe
+# Sidecars: dev shims locally, real binaries staged by CI. Neither belongs in
+# the repo — externalBin + targets:"all" would bundle whatever is here, and a
+# shim that ends in `exec "$@"` is not something to ship.
+src-tauri/binaries/*
+!src-tauri/binaries/.gitkeep
 __pycache__/

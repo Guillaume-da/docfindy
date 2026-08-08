@@ -54,6 +54,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      # externalBin makes the sidecars a build input: without a file per target
+      # triple the crate does not compile at all. They are not in the repo —
+      # shims are a local dev artefact and the real binaries are staged by the
+      # release workflow — so the shims are written here. After the toolchain
+      # step: the script asks rustc for the host triple to name them.
+      - name: Create sidecar shims
+        run: scripts/dev-sidecars.sh
+        working-directory: .
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri

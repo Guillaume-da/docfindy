@@ -60,6 +60,8 @@ cd docfindy
 python3 -m venv engine/.venv
 engine/.venv/bin/pip install pypdf
 
+scripts/dev-sidecars.sh   # sidecar shims for your host triple (untracked)
+
 npm install
 npm run tauri dev      # development
 npm run tauri build    # production bundle
@@ -116,11 +118,19 @@ engine/.venv/bin/python engine/main.py detect --path ~/Documents
 
 Subcommands: `detect`, `build`, `update`, `text`, `blocks`, `search`, `fts`.
 
-In development, the shims in `src-tauri/binaries/` forward to `engine/.venv`. Override the resolved engine with:
+In development, the shims written by `scripts/dev-sidecars.sh` into
+`src-tauri/binaries/` forward to `engine/.venv`. That directory is not tracked:
+`externalBin` bundles whatever it finds there, and a dev shim is not something
+to ship. Release builds stage the real binaries in CI.
+
+Override the resolved engine with:
 
 ```bash
 DOCFINDY_ENGINE="/path/to/python /path/to/main.py" npm run tauri dev
 ```
+
+The variable is read in debug builds only — in a shipped binary it would turn
+"can set this app's environment" into arbitrary code execution.
 
 ## Configuration & data
 
@@ -152,15 +162,26 @@ search) send the relevant document text to the Anthropic API, and only when you
 invoke them. Without an API key the app still works; those panels are hidden.
 
 **What is never indexed.** Credential-shaped files — `.env*`, SSH keys,
-`.pem`, `.key`, `.kdbx`, `.pfx`, `.p12`, `.ppk` — are skipped, as are system
-directories and dev noise (`node_modules`, `__pycache__`, dot-directories).
+`.pem`, `.key`, `.kdbx`, `.pfx`, `.p12`, `.ppk`, `.jks`, `.gpg`, `.asc`, and
+whole names like `credentials`, `.netrc`, `.npmrc`, `.pgpass`, `wallet.dat` —
+are skipped, along with anything under `.ssh`, `.aws`, `.gnupg`, `.docker`,
+`gcloud` or `.azure`, system directories and dev noise (`node_modules`,
+`__pycache__`, dot-directories).
 
 **Agent confinement.** The agent picks what to read partly from document text it
-was just given, which makes a hostile document a prompt-injection vector. Its
-file tools therefore resolve every path against your indexed roots *after*
+was just given, which makes a hostile document a prompt-injection vector. *All
+five* of its file tools resolve every path against your indexed roots *after*
 canonicalisation, so `..` and symlinks cannot escape, and refuse
-credential-shaped names on read as well as at indexing time. The system prompt
-states that file contents are data, never instructions.
+credential-shaped paths on read as well as at indexing time. The engine sidecar
+applies the credential rule again on its own, so it is safe even when driven
+directly. The system prompt states that file contents are data, never
+instructions — but the tools, not the prompt, are what enforces this.
+
+**Webview confinement.** The `asset:` protocol scope starts empty and is
+widened at runtime to exactly the indexed roots, so the frontend cannot render
+a file the commands would refuse to open. The CSP allows no outbound
+connections beyond the IPC channel (`connect-src 'self' ipc:`), which means
+document text pulled into the page has nowhere to be sent.
 
 **Where the API key lives.** OS keychain first (Windows Credential Manager,
 macOS Keychain, Secret Service). The file fallback is only used when that

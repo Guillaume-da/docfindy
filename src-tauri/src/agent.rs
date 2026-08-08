@@ -162,15 +162,44 @@ fn tools() -> Value {
 
 /// Credential-ish names the indexer refuses to index. The agent must not be
 /// able to reach them by asking for them by path either.
+///
+/// Kept in step with the same three lists in `engine/main.py`.
 const SENSITIVE_PREFIXES: [&str; 4] = [".env", "id_rsa", "id_ed25519", "id_ecdsa"];
-const SENSITIVE_SUFFIXES: [&str; 7] = ["pem", "key", "kdbx", "pfx", "p12", "ppk", "keychain"];
+const SENSITIVE_SUFFIXES: [&str; 12] = [
+    "pem", "key", "kdbx", "pfx", "p12", "ppk", "keychain", "jks", "p8", "asc", "gpg", "keystore",
+];
+/// Whole file names that carry secrets without a telling extension.
+const SENSITIVE_NAMES: [&str; 8] = [
+    "credentials",
+    "credentials.json",
+    ".git-credentials",
+    ".netrc",
+    "_netrc",
+    ".npmrc",
+    ".pgpass",
+    "wallet.dat",
+];
+/// Directories whose entire contents are credential material. Matched on any
+/// component of the canonical path, so `~/.ssh/config` and `~/.aws/cli/cache`
+/// are refused as surely as `~/.ssh/id_rsa`.
+const SENSITIVE_DIRS: [&str; 6] = [".ssh", ".aws", ".gnupg", ".docker", "gcloud", ".azure"];
 
 fn is_sensitive(path: &std::path::Path) -> bool {
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy().to_lowercase())
         .unwrap_or_default();
-    if SENSITIVE_PREFIXES.iter().any(|p| name.starts_with(p)) {
+    if SENSITIVE_NAMES.contains(&name.as_str())
+        || SENSITIVE_PREFIXES.iter().any(|p| name.starts_with(p))
+    {
+        return true;
+    }
+    if path
+        .parent()
+        .into_iter()
+        .flat_map(|p| p.components())
+        .any(|c| SENSITIVE_DIRS.contains(&c.as_os_str().to_string_lossy().to_lowercase().as_str()))
+    {
         return true;
     }
     path.extension()
@@ -270,9 +299,17 @@ async fn execute_tool(
                 "--limit".into(),
                 input["limit"].as_u64().unwrap_or(20).to_string(),
             ];
+            // The optional scope is a path the model chose, so it goes through
+            // the same confinement as read_file. Without this the engine's
+            // `search --path` reads any file it is handed — extension-less
+            // files included — and feeds the matching lines back to the API.
             if let Some(p) = input["path"].as_str() {
+                let p = match resolve_in_roots(p, roots) {
+                    Ok(p) => p.to_string_lossy().into_owned(),
+                    Err(e) => return format!("error: {e}"),
+                };
                 args.push("--path".into());
-                args.push(p.to_string());
+                args.push(p);
             }
             match engine::run(app, &args, false).await {
                 Ok(v) => serde_json::to_string(&v).unwrap_or_default(),
@@ -280,7 +317,16 @@ async fn execute_tool(
             }
         }
         "show_file" => {
-            let path = input["path"].as_str().unwrap_or_default().to_string();
+            // Confined like every other path the model picks: the result is
+            // handed to the webview, which renders it (image thumbnails go
+            // through the asset protocol), and an unchecked path would also
+            // answer "does this file exist, and how big is it" for anywhere
+            // on disk.
+            let raw = input["path"].as_str().unwrap_or_default();
+            let path = match resolve_in_roots(raw, roots) {
+                Ok(p) => p.to_string_lossy().into_owned(),
+                Err(e) => return format!("error: {e}"),
+            };
             let meta = std::fs::metadata(&path).ok();
             let f = ShownFile {
                 path: path.clone(),
@@ -355,8 +401,12 @@ pub async fn agent_loop(
     // Safety net: if the agent found and read a file but never called show_file
     // (or every show_file target was missing), preview the last file it read so
     // the user always gets the document on the right, not a blank pane.
+    // `last_read` is recorded before the tool runs, so it may name a file
+    // read_file itself refused — confine it again rather than let the fallback
+    // preview what the tool would not open.
     if !shown.iter().any(|s| s.exists) {
-        if let Some(path) = last_read {
+        if let Some(path) = last_read.and_then(|p| resolve_in_roots(&p, roots).ok()) {
+            let path = path.to_string_lossy().into_owned();
             if let Ok(m) = std::fs::metadata(&path) {
                 let f = ShownFile {
                     path,
@@ -489,4 +539,158 @@ pub async fn expand_query(
     }
     out.truncate(10);
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_sensitive, resolve_in_roots};
+    use std::fs;
+    use std::path::{Path, PathBuf};
+
+    /// Unique scratch directory under the OS temp dir, canonicalised so the
+    /// comparisons in the tests match what `resolve_in_roots` computes (macOS
+    /// resolves /var to /private/var).
+    fn scratch(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("docfindy-test-{tag}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::canonicalize(&dir).unwrap()
+    }
+
+    fn touch(p: &Path) {
+        fs::create_dir_all(p.parent().unwrap()).unwrap();
+        fs::write(p, b"x").unwrap();
+    }
+
+    #[test]
+    fn accepts_a_file_inside_a_root() {
+        let base = scratch("inside");
+        let root = base.join("docs");
+        let file = root.join("report.pdf");
+        touch(&file);
+        let roots = vec![root.to_string_lossy().into_owned()];
+        assert_eq!(
+            resolve_in_roots(file.to_str().unwrap(), &roots).unwrap(),
+            file
+        );
+        fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn refuses_a_file_outside_every_root() {
+        let base = scratch("outside");
+        let root = base.join("docs");
+        fs::create_dir_all(&root).unwrap();
+        let outside = base.join("elsewhere/secret.txt");
+        touch(&outside);
+        let roots = vec![root.to_string_lossy().into_owned()];
+        let err = resolve_in_roots(outside.to_str().unwrap(), &roots).unwrap_err();
+        assert!(err.contains("outside the indexed folders"), "{err}");
+        fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn refuses_traversal_out_of_a_root() {
+        let base = scratch("traversal");
+        let root = base.join("docs");
+        fs::create_dir_all(&root).unwrap();
+        let outside = base.join("elsewhere/secret.txt");
+        touch(&outside);
+        let roots = vec![root.to_string_lossy().into_owned()];
+        let sneaky = root.join("../elsewhere/secret.txt");
+        let err = resolve_in_roots(sneaky.to_str().unwrap(), &roots).unwrap_err();
+        assert!(err.contains("outside the indexed folders"), "{err}");
+        fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn refuses_a_symlink_planted_inside_a_root() {
+        let base = scratch("symlink");
+        let root = base.join("docs");
+        fs::create_dir_all(&root).unwrap();
+        let outside = base.join("elsewhere/secret.txt");
+        touch(&outside);
+        let link = root.join("innocent.txt");
+        std::os::unix::fs::symlink(&outside, &link).unwrap();
+        let roots = vec![root.to_string_lossy().into_owned()];
+        let err = resolve_in_roots(link.to_str().unwrap(), &roots).unwrap_err();
+        assert!(err.contains("outside the indexed folders"), "{err}");
+        fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn refuses_a_credential_file_even_inside_a_root() {
+        let base = scratch("credential");
+        let root = base.join("docs");
+        let roots = vec![root.to_string_lossy().into_owned()];
+        for name in [
+            ".env",
+            ".env.local",
+            "id_rsa",
+            "server.pem",
+            "vault.kdbx",
+            "signing.jks",
+            "key.p8",
+            "backup.gpg",
+            ".git-credentials",
+            ".netrc",
+            ".npmrc",
+            ".pgpass",
+            "credentials",
+            "credentials.json",
+            "wallet.dat",
+        ] {
+            let file = root.join(name);
+            touch(&file);
+            let err = resolve_in_roots(file.to_str().unwrap(), &roots).unwrap_err();
+            assert!(err.contains("credential"), "{name} was allowed: {err}");
+        }
+        fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn refuses_anything_under_a_credential_directory() {
+        let base = scratch("credential-dir");
+        let root = base.join("docs");
+        let roots = vec![root.to_string_lossy().into_owned()];
+        for rel in [
+            ".ssh/config",
+            ".aws/cli/cache/session.json",
+            ".gnupg/pubring.kbx",
+            ".docker/config.json",
+            "gcloud/access_tokens.db",
+            ".azure/msal_token_cache.json",
+        ] {
+            let file = root.join(rel);
+            touch(&file);
+            let err = resolve_in_roots(file.to_str().unwrap(), &roots).unwrap_err();
+            assert!(err.contains("credential"), "{rel} was allowed: {err}");
+        }
+        fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn ordinary_documents_are_not_treated_as_credentials() {
+        // The blocklist has to stay narrow enough to be usable.
+        for name in [
+            "invoice.pdf",
+            "notes.md",
+            "keynote.txt",
+            "monkey.png",
+            "environment-report.docx",
+            "credentials-policy.docx",
+        ] {
+            assert!(
+                !is_sensitive(Path::new("/home/u/docs").join(name).as_path()),
+                "{name} was refused"
+            );
+        }
+    }
+
+    #[test]
+    fn refuses_everything_when_no_root_is_configured() {
+        let err = resolve_in_roots("/etc/passwd", &[]).unwrap_err();
+        assert!(err.contains("no indexed roots"), "{err}");
+    }
 }
