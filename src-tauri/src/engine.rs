@@ -1,5 +1,5 @@
 //! docfindy-engine sidecar (document indexer). Resolution order:
-//! 1. DOCFINDY_ENGINE env var — dev override, e.g.
+//! 1. DOCFINDY_ENGINE env var — dev override, debug builds only, e.g.
 //!    `DOCFINDY_ENGINE="/home/g/projects/docfindy/engine/.venv/bin/python /home/g/projects/docfindy/engine/main.py"`
 //! 2. sidecar binary next to the app executable (production bundle)
 //! 3. `docfindy-engine` on PATH
@@ -11,6 +11,10 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
 fn engine_command() -> (String, Vec<String>) {
+    // Debug builds only: the variable names a program the app then runs, so in
+    // a shipped build it turns "can set this app's environment" into "runs
+    // arbitrary code as the user".
+    #[cfg(debug_assertions)]
     if let Ok(dev) = std::env::var("DOCFINDY_ENGINE") {
         let mut parts = dev.split_whitespace().map(String::from);
         let prog = parts.next().unwrap_or_else(|| "docfindy-engine".into());

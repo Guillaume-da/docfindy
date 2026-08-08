@@ -88,10 +88,12 @@ NOISE_DIRS = {"node_modules", "__pycache__", "site-packages", "venv"}
 
 SKIP_FILES = {"desktop.ini", "thumbs.db", ".ds_store"}
 
-# Never index secrets, by name prefix or suffix; counted as skipped_sensitive.
+# Never index secrets, by name prefix, whole name or suffix; counted as
+# skipped_sensitive. Kept in step with the same lists in src-tauri/src/agent.rs.
 SENSITIVE_PREFIXES = (".env", "id_rsa", "id_ed25519", "id_ecdsa")
 SENSITIVE_SUFFIXES = {".pem", ".key", ".kdbx", ".pfx", ".p12", ".ppk", ".keychain",
-                      ".tfvars", ".tfstate", ".jks", ".p8"}
+                      ".tfvars", ".tfstate", ".jks", ".p8", ".asc", ".gpg",
+                      ".keystore"}
 
 # Secrets do not always hide behind a dot or a telling extension: a plain
 # credentials.json or secrets.yaml is just as sensitive. Matched on the stem,
@@ -99,6 +101,14 @@ SENSITIVE_SUFFIXES = {".pem", ".key", ".kdbx", ".pfx", ".p12", ".ppk", ".keychai
 # and other ordinary names do not.
 SENSITIVE_STEMS = {"credentials", "credential", "secrets", "secret",
                    "serviceaccount", "service-account", "service_account"}
+
+# Whole names that neither the stem rule nor the leading-dot rule catches.
+SENSITIVE_NAMES = {"_netrc", "wallet.dat"}
+
+# Directories that are credential material in their entirety. The walker never
+# descends into the dotted ones anyway (_skip_dir), but a caller can still hand
+# an explicit --path pointing inside one.
+SENSITIVE_DIRS = {".ssh", ".aws", ".gnupg", ".docker", "gcloud", ".azure"}
 
 DOCUMENT_SUFFIXES = {
     ".pdf", ".docx", ".doc", ".odt", ".rtf", ".txt", ".md", ".markdown",
@@ -133,6 +143,7 @@ def _skip_dir(name: str) -> bool:
 def _is_sensitive(name: str) -> bool:
     n = name.lower()
     return (n.startswith(".")
+            or n in SENSITIVE_NAMES
             or n.startswith(SENSITIVE_PREFIXES)
             or Path(n).suffix in SENSITIVE_SUFFIXES
             or Path(n).stem in SENSITIVE_STEMS)
@@ -159,6 +170,23 @@ SECRET_PATTERNS = (
 
 def _has_secret(text: str) -> bool:
     return any(p.search(text) for p in SECRET_PATTERNS)
+
+
+def _is_sensitive_path(p: Path) -> bool:
+    """Same rule as _is_sensitive, plus the credential directories.
+
+    Applied to any path handed in from outside (--path), so the engine refuses
+    credential files on its own rather than relying on its caller to have
+    checked. Symlinks are resolved first so a link inside an indexed folder
+    cannot point at ~/.ssh.
+    """
+    try:
+        p = p.expanduser().resolve()
+    except OSError:
+        return True
+    if _is_sensitive(p.name):
+        return True
+    return any(part.lower() in SENSITIVE_DIRS for part in p.parts[:-1])
 
 
 def _collect(root: Path) -> tuple[list[dict], int]:
@@ -673,6 +701,8 @@ def _extract_text(path: Path, max_chars: int) -> str:
 
 def cmd_blocks(args: argparse.Namespace) -> None:
     p = Path(args.path).expanduser()
+    if _is_sensitive_path(p):
+        _fail("refused: looks like a credential file")
     if not p.is_file():
         _fail(f"not a file: {p}")
     blocks = _blocks_of(p, args.max_chars)
@@ -691,6 +721,8 @@ def cmd_blocks(args: argparse.Namespace) -> None:
 
 def cmd_text(args: argparse.Namespace) -> None:
     p = Path(args.path).expanduser()
+    if _is_sensitive_path(p):
+        _fail("refused: looks like a credential file")
     if not p.is_file():
         _fail(f"not a file: {p}")
     _emit({"path": str(p), "text": _extract_text(p, args.max_chars)})
@@ -858,7 +890,10 @@ def cmd_search(args: argparse.Namespace) -> None:
 
     targets: list[Path] = []
     if args.path:
-        targets = [Path(args.path).expanduser()]
+        p = Path(args.path).expanduser()
+        if _is_sensitive_path(p):
+            _fail("refused: looks like a credential file")
+        targets = [p]
     else:
         fj = out_dir / "files.json"
         if not fj.exists():

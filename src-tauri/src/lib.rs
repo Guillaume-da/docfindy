@@ -13,6 +13,9 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             migrate::run(app.handle());
+            // after the migration: the roots are read from the settings file,
+            // which migrate::run may have just moved into place
+            commands::sync_asset_scope(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

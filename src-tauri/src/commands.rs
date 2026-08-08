@@ -70,7 +70,10 @@ pub fn save_settings(app: tauri::AppHandle, settings: Value) -> Result<(), Strin
     // Merge rather than replace: a caller that sends a partial object should
     // not silently drop the keys it left out.
     let merged = merge_settings(load_settings(&app), settings);
-    fs::write(p, serde_json::to_string_pretty(&merged).unwrap()).map_err(|e| e.to_string())
+    fs::write(p, serde_json::to_string_pretty(&merged).unwrap()).map_err(|e| e.to_string())?;
+    // roots may have just changed; the asset scope follows them
+    sync_asset_scope(&app);
+    Ok(())
 }
 
 /// Shallow merge of `incoming` over `current`. Keys present in `incoming` win,
@@ -90,9 +93,14 @@ fn merge_settings(current: Value, incoming: Value) -> Value {
 /// frontend is bundled and trusted, but if script injection ever landed there,
 /// these commands would otherwise hand it arbitrary file read/open. Validate
 /// against the indexed roots (canonicalised, credential files refused) exactly
-/// like the agent's tools; the original path string is kept for the OS calls,
-/// which on Windows do not all accept the `\\?\` form canonicalisation yields.
-fn ensure_in_roots(app: &tauri::AppHandle, path: &str) -> Result<(), String> {
+/// like the agent's tools.
+///
+/// Returns the path the caller should actually use. Everywhere but Windows
+/// that is the canonical one, so the file opened is the file that was checked
+/// and a symlink swapped in afterwards changes nothing. Windows keeps the
+/// original string: canonicalisation there yields the `\\?\` form, which the
+/// shell APIs behind `explorer` and the opener plugin do not all accept.
+fn checked_path(app: &tauri::AppHandle, path: &str) -> Result<String, String> {
     let settings = load_settings(app);
     let roots: Vec<String> = settings["roots"]
         .as_array()
@@ -102,7 +110,32 @@ fn ensure_in_roots(app: &tauri::AppHandle, path: &str) -> Result<(), String> {
                 .collect()
         })
         .unwrap_or_default();
-    agent::resolve_in_roots(path, &roots).map(|_| ())
+    let real = agent::resolve_in_roots(path, &roots)?;
+    if cfg!(target_os = "windows") {
+        Ok(path.to_string())
+    } else {
+        Ok(real.to_string_lossy().into_owned())
+    }
+}
+
+/// Grant the webview `asset:` access to the indexed roots, and only those.
+///
+/// The static scope in `tauri.conf.json` is empty on purpose: a `$HOME/**`
+/// scope would let the webview render any file under the home directory in an
+/// `<img>` or a PDF `<iframe>`, which is exactly the confinement every command
+/// here spends its first line enforcing. Called at startup and again whenever
+/// the roots change, so the scope tracks what is actually indexed.
+pub fn sync_asset_scope(app: &tauri::AppHandle) {
+    let settings = load_settings(app);
+    let Some(roots) = settings["roots"].as_array() else {
+        return;
+    };
+    let scope = app.asset_protocol_scope();
+    for root in roots.iter().filter_map(|r| r.as_str()) {
+        if let Err(e) = scope.allow_directory(root, true) {
+            eprintln!("asset scope: could not allow {root}: {e}");
+        }
+    }
 }
 
 /// Store a key. `provider` is optional so the onboarding flow, which only
@@ -213,6 +246,8 @@ pub async fn build_index(app: tauri::AppHandle, paths: Vec<String>) -> Result<Va
     // persist indexed roots in settings for the agent's system prompt
     let mut settings = load_settings(&app);
     settings["roots"] = json!(paths);
+    // save_settings widens the asset scope to the new roots as a side effect,
+    // so the freshly indexed folders are previewable without a restart
     let _ = save_settings(app.clone(), settings);
     Ok(result)
 }
@@ -285,7 +320,7 @@ pub async fn summarize_file(
     path: String,
     lang: Option<String>,
 ) -> Result<Value, String> {
-    ensure_in_roots(&app, &path)?;
+    let path = checked_path(&app, &path)?;
     let (prov, api_key, model, settings) = ai_context(&app)?;
     // caller passes the UI's current language so the summary follows the toggle
     let lang = lang
@@ -311,7 +346,7 @@ pub async fn ask_document(
     question: String,
     lang: Option<String>,
 ) -> Result<Value, String> {
-    ensure_in_roots(&app, &path)?;
+    let path = checked_path(&app, &path)?;
     let (prov, api_key, model, settings) = ai_context(&app)?;
     let lang = lang
         .filter(|l| !l.trim().is_empty())
@@ -376,7 +411,7 @@ const IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp",
 
 #[tauri::command]
 pub async fn read_preview(app: tauri::AppHandle, path: String) -> Result<Value, String> {
-    ensure_in_roots(&app, &path)?;
+    let path = checked_path(&app, &path)?;
     let p = PathBuf::from(&path);
     let meta = fs::metadata(&p).map_err(|e| format!("not found: {e}"))?;
     let ext = p
@@ -429,13 +464,31 @@ pub async fn read_preview(app: tauri::AppHandle, path: String) -> Result<Value, 
     Ok(out)
 }
 
+/// Percent-encode everything a `file:` URL cannot carry literally.
+///
+/// The separators (`/`) and the Windows drive colon are left alone; everything
+/// outside the unreserved set is escaped. Without this a filename holding `#`
+/// or `?` — neither is exotic on a downloaded file — silently truncates the
+/// URL and the browser opens a different file, or none.
+fn encode_file_url_path(path: &str) -> String {
+    let mut out = String::with_capacity(path.len());
+    for b in path.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' => out.push(b as char),
+            b'-' | b'_' | b'.' | b'~' | b'/' | b':' => out.push(b as char),
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
 /// Open the file in the default web browser (not the default file handler).
 #[tauri::command]
 pub fn open_in_browser(app: tauri::AppHandle, path: String) -> Result<(), String> {
-    ensure_in_roots(&app, &path)?;
+    let path = checked_path(&app, &path)?;
     let url = format!(
         "file:///{}",
-        path.trim_start_matches('/').replace('\\', "/")
+        encode_file_url_path(&path.trim_start_matches('/').replace('\\', "/"))
     );
 
     #[cfg(target_os = "windows")]
@@ -477,7 +530,7 @@ pub fn open_in_browser(app: tauri::AppHandle, path: String) -> Result<(), String
 /// download — could break out and run as a command.
 #[tauri::command]
 pub fn open_file(app: tauri::AppHandle, path: String) -> Result<(), String> {
-    ensure_in_roots(&app, &path)?;
+    let path = checked_path(&app, &path)?;
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     {
         use tauri_plugin_opener::OpenerExt;
@@ -506,7 +559,7 @@ pub fn open_file(app: tauri::AppHandle, path: String) -> Result<(), String> {
 /// escape.
 #[tauri::command]
 pub fn copy_file_to_clipboard(app: tauri::AppHandle, path: String) -> Result<(), String> {
-    ensure_in_roots(&app, &path)?;
+    let path = checked_path(&app, &path)?;
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
@@ -564,7 +617,7 @@ fn safe_for_explorer_arg(path: &str) -> bool {
 /// Reveal the file in the OS file manager, selected.
 #[tauri::command]
 pub fn reveal_in_folder(app: tauri::AppHandle, path: String) -> Result<(), String> {
-    ensure_in_roots(&app, &path)?;
+    let path = checked_path(&app, &path)?;
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
